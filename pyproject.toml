@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mpeg-o-mcp"
+version = "0.1.0.dev0"
+description = "MCP server exposing MPEG-O (.mpgo) file capabilities to LLM clients"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "DTW-Thalion" }]
+keywords = ["mcp", "mpeg-o", "multi-omics", "llm", "catalog"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "mcp>=1.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.0.0#subdirectory=python",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+cloud = [
+    "s3fs",
+    "fsspec",
+]
+
+[project.scripts]
+mpeg-o-mcp = "mpeg_o_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/DTW-Thalion/MPEG-O-MCP-Server"
+Repository = "https://github.com/DTW-Thalion/MPEG-O-MCP-Server"
+"MPEG-O Standard" = "https://github.com/DTW-Thalion/MPEG-O"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mpeg_o_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
