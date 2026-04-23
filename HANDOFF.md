@@ -8,8 +8,11 @@ place). This is milestone 1 of 5; scope is scaffolding only — no tool
 logic. The deliverable is a repo that migrates its schema, launches, and
 survives an MCP `initialize` handshake.
 
-Main MPEG-O repo: `github.com/DTW-Thalion/MPEG-O`. Python package `mpeg-o`
-on TestPyPI (imports as `mpeg_o`).
+Main MPEG-O repo: `github.com/DTW-Thalion/MPEG-O`, currently at tag
+`v1.0.0` (first stable release, 2026-04-23). Python package name
+`mpeg-o` (imports as `mpeg_o`) — **not yet published to PyPI or
+TestPyPI**; M1 installs the dependency directly from the git tag.
+Publishing is tracked as MPEG-O M40, planned for v1.0.1.
 
 ## Binding Decisions
 
@@ -71,8 +74,14 @@ MPEG-O-MCP/
 
 - Build backend: hatchling.
 - Name `mpeg-o-mcp`, import `mpeg_o_mcp`, Python `>=3.11`.
-- Runtime deps: `mcp>=1.0`, `mpeg-o>=0.4,<0.5`, `sqlalchemy>=2.0`,
-  `alembic>=1.13`.
+- Runtime deps: `mcp>=1.0`, `sqlalchemy>=2.0`, `alembic>=1.13`, plus
+  `mpeg-o` pulled directly from the v1.0.0 git tag via a PEP 508
+  direct-URL reference:
+  ```
+  mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.0.0#subdirectory=python
+  ```
+  When MPEG-O M40 lands on PyPI (v1.0.1 target), swap this to
+  `mpeg-o>=1.0,<2.0`.
 - Extras:
   - `dev`: pytest, pytest-asyncio, ruff, mypy
   - `cloud`: s3fs, fsspec (pass-through; actual use in M4)
@@ -80,9 +89,8 @@ MPEG-O-MCP/
 - SPDX `Apache-2.0`.
 - pytest config: `asyncio_mode = "auto"`.
 
-Because `mpeg-o` lives on TestPyPI, the README must document the
-`--extra-index-url https://test.pypi.org/simple/` install flag. CI sets
-`PIP_EXTRA_INDEX_URL` to the same.
+No `--extra-index-url` needed — the git-URL dependency resolves
+directly from GitHub on both `pip install` and CI.
 
 ## Database Schema
 
@@ -177,16 +185,17 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
 - Steps:
   1. `actions/checkout@v4`
   2. `actions/setup-python@v5` with pip cache keyed on `pyproject.toml`.
-  3. `pip install -e ".[dev]"` with `PIP_EXTRA_INDEX_URL` set to
-     `https://test.pypi.org/simple/`.
+  3. `pip install -e ".[dev]"` (no extra-index-url — `mpeg-o` resolves
+     from its git tag per the direct-URL dependency in `pyproject.toml`).
   4. `ruff check .`
   5. `alembic upgrade head` (env `MPGO_MCP_DB_URL=sqlite:///./ci.db`).
   6. `pytest -q`.
 
 ## Acceptance Checklist
 
-- [ ] Fresh clone → `pip install -e ".[dev]"` succeeds (TestPyPI
-      extra-index documented and used).
+- [ ] Fresh clone → `pip install -e ".[dev]"` succeeds (pulls
+      `mpeg-o` from the MPEG-O v1.0.0 git tag; no extra-index-url
+      required).
 - [ ] `alembic upgrade head` creates all six tables and seeds the
       `system` user.
 - [ ] `alembic downgrade base` cleanly drops everything.
