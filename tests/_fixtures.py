@@ -13,6 +13,7 @@ from mpeg_o import (
     AcquisitionMode,
     Identification,
     ProvenanceRecord,
+    Quantification,
     SpectralDataset,
     WrittenRun,
 )
@@ -50,6 +51,10 @@ def build_ms_fixture(
         identifications=[
             Identification("run_0001", 0, "CHEBI:15377", 0.95, ["ev:peak"]),
             Identification("run_0001", 2, "CHEBI:28001", 0.70, ["ev:ms2"]),
+        ],
+        quantifications=[
+            Quantification("CHEBI:15377", "run_0001", 1234.5, "median"),
+            Quantification("CHEBI:28001", "run_0001", 56.78, "median"),
         ],
         provenance=[
             ProvenanceRecord(

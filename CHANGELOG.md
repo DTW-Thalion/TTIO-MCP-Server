@@ -6,6 +6,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0.dev0] — 2026-04-23
+
+### Added
+- Query, spectra, and quantifications (M3).
+  - `quantifications` table via Alembic migration on top of
+    `d556e849b813`; composite index `ix_quantifications_chebi_sample`
+    for hot `(chebi_id, sample_ref)` lookups.
+  - `mpeg_o_mcp.catalog.register_file` now eagerly materialises
+    `ds.quantifications()` and replaces them atomically on
+    re-registration.
+  - Four new MCP tools: `mpgo_search_identifications`,
+    `mpgo_get_run`, `mpgo_get_spectrum`, `mpgo_get_quantifications`.
+  - `mpgo_get_spectrum` is the only query tool that reopens the
+    underlying `.mpgo` — all others answer from the catalog. Channels
+    past `max_points` (default 1000, cap 100000) are stride-downsampled
+    and flagged with `truncated: true`.
+  - 15 new tests (6 catalog/query, 4 spectrum read incl. NMR and
+    downsampling, 3 quantification filters, tool surface sanity).
+  - Tool-level error codes gain `invalid_argument` and `read_failed`.
+
 ## [0.2.0.dev0] — 2026-04-23
 
 ### Added

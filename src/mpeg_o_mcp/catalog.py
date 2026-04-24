@@ -20,6 +20,7 @@ from mpeg_o_mcp.db.models import (
     File,
     Identification,
     ProvenanceRecord,
+    Quantification,
     Run,
     Study,
     User,
@@ -155,12 +156,25 @@ def _extract(dataset) -> dict[str, Any]:  # type: ignore[no-untyped-def]
         for rec in dataset.provenance()
     ]
 
+    quant_payload = [
+        {
+            "chebi_id": q.chemical_entity or None,
+            "name": q.chemical_entity or None,
+            "sample_ref": q.sample_ref or None,
+            "abundance": float(q.abundance) if q.abundance is not None else None,
+            "normalization_method": q.normalization_method or None,
+            "metadata_json": {},
+        }
+        for q in dataset.quantifications()
+    ]
+
     return {
         "format_version": format_version,
         "features": features,
         "studies": studies_payload,
         "runs": runs_payload,
         "identifications": id_payload,
+        "quantifications": quant_payload,
         "provenance": prov_payload,
     }
 
@@ -228,6 +242,7 @@ def register_file(
             existing.studies,
             existing.runs,
             existing.identifications,
+            existing.quantifications,
             existing.provenance_records,
         ):
             coll.clear()
@@ -287,6 +302,9 @@ def register_file(
             )
         )
 
+    for q in meta["quantifications"]:
+        file_row.quantifications.append(Quantification(**q))
+
     session.flush()
     session.commit()
 
@@ -295,6 +313,9 @@ def register_file(
         "runs": session.query(Run).filter(Run.file_id == file_row.id).count(),
         "identifications": session.query(Identification)
         .filter(Identification.file_id == file_row.id)
+        .count(),
+        "quantifications": session.query(Quantification)
+        .filter(Quantification.file_id == file_row.id)
         .count(),
         "provenance_records": session.query(ProvenanceRecord)
         .filter(ProvenanceRecord.file_id == file_row.id)
