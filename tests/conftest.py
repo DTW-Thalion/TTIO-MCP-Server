@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 
 from mpeg_o_mcp.db import Base, make_engine, make_session_factory
 
+# Register cloud fixtures as a plugin so test modules can use
+# ``moto_s3_server`` without importing it (which triggers F811).
+pytest_plugins = ("tests._cloud",)
+
 
 @pytest.fixture
 def engine():
