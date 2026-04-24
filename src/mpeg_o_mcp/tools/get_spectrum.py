@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
 from mpeg_o_mcp.db.models import File, Run
-from mpeg_o_mcp.keyring import Keyring
+from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
 from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 DEFAULT_MAX_POINTS = 1000
@@ -133,7 +133,7 @@ async def handle(
                     f"(algorithm={f.encrypted_algorithm or 'unknown'}); "
                     f"pass key_id to decrypt at read time"
                 )
-            key = keyring.get(key_id)
+            key = keyring.get(key_id, expected_algorithm=AES_256_GCM)
             try:
                 dataset.decrypt_with_key(key)
             except Exception as exc:

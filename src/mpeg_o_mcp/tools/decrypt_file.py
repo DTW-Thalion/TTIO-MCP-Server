@@ -24,7 +24,7 @@ from mpeg_o_mcp.catalog import (
     resolve_local_path,
 )
 from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
-from mpeg_o_mcp.keyring import Keyring
+from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
 from mpeg_o_mcp.tools._helpers import lookup_file
 
 SCHEMA: dict[str, Any] = {
@@ -81,7 +81,7 @@ async def handle(
     except ResolveFailed:
         raise
 
-    key = keyring.get(key_id)
+    key = keyring.get(key_id, expected_algorithm=AES_256_GCM)
 
     from mpeg_o import SpectralDataset
 

@@ -94,7 +94,7 @@ async def handle(
     except ResolveFailed:
         raise
 
-    key = keyring.get(key_id)
+    key = keyring.get(key_id, expected_algorithm=AES_256_GCM)
 
     from mpeg_o import SpectralDataset
     from mpeg_o.enums import EncryptionLevel

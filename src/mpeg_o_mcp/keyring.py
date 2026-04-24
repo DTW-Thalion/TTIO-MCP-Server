@@ -1,4 +1,4 @@
-"""JSON-file-backed keyring for AES-256-GCM encryption keys.
+"""JSON-file-backed keyring for symmetric cryptographic keys.
 
 The keyring is a flat JSON file whose path is controlled by
 ``MPGO_KEYRING_PATH``. Keys are stored as base64-encoded bytes alongside
@@ -9,15 +9,25 @@ exposed through MCP tool responses. Tool calls reference keys by
 ``key_id`` (the map key in the JSON file); the keyring resolves
 ``key_id`` → raw bytes server-side.
 
+Supported algorithms:
+
+* ``AES-256-GCM`` — bulk encryption, keys must be exactly 32 bytes.
+* ``hmac-sha256`` — HMAC-SHA256 signatures (M7), variable-length keys
+  (non-empty; <16 bytes is tolerated but not recommended).
+
 File layout::
 
     {
       "keys": {
-        "demo": {
+        "demo-enc": {
           "value": "base64-encoded 32 bytes",
           "algorithm": "AES-256-GCM",
           "created_at": "2026-04-24T12:00:00+00:00",
           "description": "optional"
+        },
+        "demo-sign": {
+          "value": "base64-encoded >=1 byte",
+          "algorithm": "hmac-sha256"
         }
       }
     }
@@ -38,6 +48,9 @@ from typing import Any
 
 AES_256_GCM = "AES-256-GCM"
 AES_256_GCM_KEY_LEN = 32
+HMAC_SHA256 = "hmac-sha256"
+
+SUPPORTED_ALGORITHMS = frozenset({AES_256_GCM, HMAC_SHA256})
 
 
 class KeyringError(Exception):
@@ -63,6 +76,10 @@ class InvalidKeyring(KeyringError):
     code = "invalid_keyring"
 
 
+class AlgorithmMismatch(KeyringError):
+    code = "algorithm_mismatch"
+
+
 @dataclass(frozen=True)
 class KeyEntry:
     """Public, secret-free view of a keyring entry."""
@@ -71,6 +88,26 @@ class KeyEntry:
     algorithm: str
     created_at: str | None
     description: str | None
+
+
+def _validate_key_bytes(key_id: str, algorithm: str, raw: bytes) -> None:
+    """Enforce per-algorithm length rules on the decoded key bytes."""
+    if algorithm == AES_256_GCM:
+        if len(raw) != AES_256_GCM_KEY_LEN:
+            raise InvalidKeyring(
+                f"key {key_id!r}: expected {AES_256_GCM_KEY_LEN}-byte "
+                f"{AES_256_GCM} key, got {len(raw)} bytes"
+            )
+    elif algorithm == HMAC_SHA256:
+        if len(raw) == 0:
+            raise InvalidKeyring(
+                f"key {key_id!r}: {HMAC_SHA256} key must be non-empty"
+            )
+    else:
+        raise InvalidKeyring(
+            f"key {key_id!r}: unsupported algorithm {algorithm!r} "
+            f"(supported: {sorted(SUPPORTED_ALGORITHMS)})"
+        )
 
 
 class Keyring:
@@ -139,12 +176,14 @@ class Keyring:
         self._entries = keys
         self._loaded = True
 
-    def get(self, key_id: str) -> bytes:
+    def get(self, key_id: str, *, expected_algorithm: str | None = None) -> bytes:
         """Resolve ``key_id`` to raw key bytes.
 
         Raises :class:`KeyringNotConfigured` if no ``MPGO_KEYRING_PATH``
-        is set, :class:`KeyNotFound` if the id is absent, and
-        :class:`InvalidKeyring` for malformed entries.
+        is set, :class:`KeyNotFound` if the id is absent,
+        :class:`InvalidKeyring` for malformed entries, and
+        :class:`AlgorithmMismatch` if ``expected_algorithm`` is supplied
+        and the stored entry disagrees.
         """
         if self._path is None:
             raise KeyringNotConfigured(
@@ -166,15 +205,11 @@ class Keyring:
                 f"key {key_id!r}: value is not valid base64: {exc}"
             ) from exc
         algorithm = entry.get("algorithm", AES_256_GCM)
-        if algorithm != AES_256_GCM:
-            raise InvalidKeyring(
-                f"key {key_id!r}: unsupported algorithm {algorithm!r} "
-                f"(only {AES_256_GCM} is supported)"
-            )
-        if len(raw) != AES_256_GCM_KEY_LEN:
-            raise InvalidKeyring(
-                f"key {key_id!r}: expected {AES_256_GCM_KEY_LEN}-byte key, "
-                f"got {len(raw)} bytes"
+        _validate_key_bytes(key_id, algorithm, raw)
+        if expected_algorithm is not None and algorithm != expected_algorithm:
+            raise AlgorithmMismatch(
+                f"key {key_id!r}: algorithm is {algorithm!r} but "
+                f"{expected_algorithm!r} was required"
             )
         return raw
 

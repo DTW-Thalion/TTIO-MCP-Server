@@ -6,6 +6,53 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0.dev0] — 2026-04-24
+
+### Added
+- HMAC-SHA256 dataset signatures (M7).
+  - New `mpgo_sign_file` tool. Resolves a local `.mpgo` to a path,
+    loads an `hmac-sha256` key from the server-side keyring by
+    `key_id`, opens the file via h5py in `r+` mode, walks every
+    `signal_channels/*_values` dataset under both MS and NMR runs,
+    and calls `mpeg_o.signatures.sign_dataset` on each. Emits the
+    canonical v2 HMAC tag into each dataset's `@mpgo_signature`
+    attribute. Re-signing overwrites the existing attribute.
+  - New `mpgo_verify_signature` tool. Walks every dataset with an
+    `@mpgo_signature` attribute and verifies each under the
+    referenced key, returning per-dataset verdicts plus an
+    aggregate `valid` flag. An unsigned file raises the new
+    `not_signed` error code so callers can't mistake "no signed
+    datasets" for "verified successfully".
+  - Keyring is now algorithm-aware. `Keyring.get(key_id,
+    expected_algorithm=...)` enforces that the stored `algorithm`
+    field matches the caller's intent (new `algorithm_mismatch`
+    error code). The hardcoded 32-byte length check is gone;
+    `AES-256-GCM` still requires 32 bytes, but `hmac-sha256` keys
+    are variable-length (non-empty, with any reasonable length).
+    `mpgo_encrypt_file` / `mpgo_decrypt_file` / `mpgo_get_spectrum`
+    / `mpgo_push_file` now pin their keys to `AES-256-GCM`, so
+    signing keys can't be accidentally used for encryption and
+    vice-versa.
+  - Alembic migration `3840d96e5185_signature_columns` adds three
+    nullable columns to `files`: `signature_algorithm`,
+    `signed_at`, `signed_by` (FK → `users.id`). The pre-existing
+    boolean `signed` column now reflects signing state.
+  - Cloud URIs and encrypted files are rejected up front for both
+    new tools — signing requires plaintext byte layout. The manual
+    sign-before-push workflow (sign local, then `mpgo_push_file`)
+    stays; DEPLOYMENT-GUIDE.md covers it.
+
+### Tests
+- 7 new tests in `tests/test_m7_sign_verify.py` (sign/verify
+  round-trip, wrong-key fails, unsigned file raises, AES key
+  rejected for signing, encrypted file rejected for signing, remote
+  URI rejected for sign and verify). Plus 3 new keyring tests in
+  `tests/test_m5_keyring.py` for the HMAC-SHA256 algorithm and the
+  new `expected_algorithm` guard. Suite total: **84 tests** (was 74).
+- `test_tools_surface_has_all_11` renamed to
+  `test_tools_surface_has_all_13` and gains `mpgo_sign_file` +
+  `mpgo_verify_signature`.
+
 ## [0.6.0.dev0] — 2026-04-24
 
 ### Added

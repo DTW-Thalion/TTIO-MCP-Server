@@ -5,11 +5,12 @@ An [MCP](https://modelcontextprotocol.io/) server that exposes
 capabilities to LLM clients via a **catalog pattern** — a SQL index
 over files that stay in place on disk or in object storage.
 
-The server speaks MCP over stdio, surfaces 11 tools (register, query,
-spectrum read, quantifications, encrypt/decrypt, cloud push), and
-delegates every byte of cryptography and I/O to the MPEG-O Python
-package. Keys live server-side under an env-configured keyring and
-never cross the MCP wire — tools reference them by `key_id`.
+The server speaks MCP over stdio, surfaces 13 tools (register, query,
+spectrum read, quantifications, encrypt/decrypt, cloud push,
+sign/verify), and delegates every byte of cryptography and I/O to the
+MPEG-O Python package. Keys live server-side under an env-configured
+keyring and never cross the MCP wire — tools reference them by
+`key_id`.
 
 ## Status
 
@@ -21,10 +22,10 @@ never cross the MCP wire — tools reference them by `key_id`.
 | M4: Cloud I/O                     | ✅ shipped | `s3://`, `https://`, `gs://`, `az://` URIs via fsspec; `MPGO_MCP_FSSPEC_KWARGS`. |
 | M5: Keyring & encryption          | ✅ shipped | `mpgo_encrypt_file`, `mpgo_decrypt_file`, `MPGO_KEYRING_PATH`, `as_user` hardening. |
 | M6: Cloud push + encrypt-on-upload | ✅ shipped | `mpgo_push_file` — streams local `.mpgo` to `s3://`/`gs://`/`abfs://`, optional in-flight AES-256-GCM. |
-| M7: Signed bundles + KMS          | planned   | Ed25519 signing via `mpeg_o.SignedBundle`, pluggable KMS keyring. |
+| M7: HMAC-SHA256 signatures         | ✅ shipped | `mpgo_sign_file` + `mpgo_verify_signature` over every `signal_channels/*_values` dataset. |
 | M8: Conformance + publish         | planned   | MCP conformance suite, TestPyPI release. |
 
-Current version: **0.6.0.dev0** (Alpha). 74 tests, ruff clean, SQLite
+Current version: **0.7.0.dev0** (Alpha). 84 tests, ruff clean, SQLite
 and Postgres-portable.
 
 ## Requirements
@@ -90,6 +91,8 @@ in the shell that launches `mpeg-o-mcp` (see
 | `mpgo_encrypt_file`          | In-place AES-256-GCM intensity encryption (local files only). |
 | `mpgo_decrypt_file`          | In-place decrypt back to plaintext (local files only). |
 | `mpgo_push_file`             | Upload a local `.mpgo` to a cloud URI, optionally encrypting on the way. |
+| `mpgo_sign_file`             | Sign every signal-channel dataset with HMAC-SHA256 (local files only). |
+| `mpgo_verify_signature`      | Verify every signed dataset; returns per-dataset verdicts plus an aggregate `valid`. |
 
 Full schemas, error codes, and response shapes: [docs/tools.md](docs/tools.md).
 
@@ -120,7 +123,7 @@ Error codes are stable per tool contract — see [docs/tools.md](docs/tools.md).
 ## Development
 
 ```bash
-pytest -q                                    # 74 tests
+pytest -q                                    # 84 tests
 ruff check .
 alembic upgrade head && alembic downgrade base   # round-trip
 ```
@@ -148,6 +151,7 @@ retroactively edited.
 - [HANDOFF-M4.md](HANDOFF-M4.md) — cloud I/O
 - [HANDOFF-M5.md](HANDOFF-M5.md) — keyring & encryption
 - [HANDOFF-M6.md](HANDOFF-M6.md) — cloud push + encrypt-on-upload
+- [HANDOFF-M7.md](HANDOFF-M7.md) — HMAC-SHA256 dataset signatures
 
 ## License
 

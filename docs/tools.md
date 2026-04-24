@@ -1,6 +1,6 @@
 # Tool reference
 
-The server registers 11 MCP tools. All responses use the envelope:
+The server registers 13 MCP tools. All responses use the envelope:
 
 ```jsonc
 // success
@@ -28,9 +28,12 @@ are rejected at the MCP layer before the handler runs.
   a per-call `fsspec_kwargs` object is shallow-merged on top of
   `MPGO_MCP_FSSPEC_KWARGS` (per-call keys win). Ignored for local
   files.
-- **Keyring.** Encrypt, decrypt, and encrypted-spectrum reads resolve
-  `key_id` through the server-side keyring (`MPGO_KEYRING_PATH`). Raw
-  key bytes never cross the MCP wire.
+- **Keyring.** Encrypt, decrypt, encrypted-spectrum reads, and sign /
+  verify all resolve `key_id` through the server-side keyring
+  (`MPGO_KEYRING_PATH`). Raw key bytes never cross the MCP wire. The
+  keyring is algorithm-scoped: AES-256-GCM keys can only be used for
+  encrypt/decrypt/push; HMAC-SHA256 keys can only be used for
+  sign/verify. Cross-algorithm use raises `algorithm_mismatch`.
 - **Pagination.** List tools use `limit` (default 50, max 500) and
   `offset` (default 0) and return `{total, limit, offset, <items>}`.
 
@@ -353,6 +356,125 @@ uploaded object exactly as if it had been registered manually.
 
 ---
 
+## Dataset signatures (M7)
+
+Both tools are **local-only** — cloud URIs are rejected with
+`remote_not_supported`. Signing and verification operate on the
+canonical v2 byte layout inside each `signal_channels/*_values`
+dataset, which requires plaintext values; encrypted files are rejected
+with `already_encrypted`. The manual workflow for a remote file is the
+same as with encryption: pull down, sign locally, `mpgo_push_file` the
+signed plaintext. (Sign-then-encrypt and encrypt-then-sign are both
+unsupported — decrypt first, then sign, then encrypt for the cloud as
+a separate step.)
+
+Both tools require a configured keyring (`MPGO_KEYRING_PATH`) holding
+an `hmac-sha256` entry. See [configuration.md](configuration.md#keyring).
+
+### `mpgo_sign_file`
+
+Walk every `signal_channels/*_values` dataset under a run and sign it
+via `mpeg_o.signatures.sign_dataset(dataset, key, algorithm="hmac-sha256")`.
+The MPEG-O library emits a `v2:<base64>` HMAC-SHA256 tag into each
+dataset's `@mpgo_signature` VL-string attribute. Re-signing overwrites
+any prior attribute — the operation is idempotent at the file level
+for a given key. Covers both MS runs (`study/*/ms_runs/<run>/...`) and
+NMR runs (`study/*/nmr_runs/<run>/...`) identically.
+
+After signing, the on-disk bytes change (new VL attrs); the catalog
+row is refreshed: `signed=True`, `signature_algorithm="hmac-sha256"`,
+`signed_at=<now UTC>`, `signed_by=<users.id>`, plus new `file_sha256`
+/ `content_sha256` / `last_verified_at`.
+
+**Input**
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer ≥1 | Alternative 1 (with `key_id`). |
+| `uri` | string | Alternative 2 (with `key_id`). |
+| `key_id` *(required)* | string | Keyring id; must reference an `hmac-sha256` key. |
+| `as_user` | string | Recorded as `signed_by`. Defaults to `system`. |
+
+**Success data**
+
+```json
+{
+  "file_id": 1,
+  "uri": "file:///data/sample.mpgo",
+  "signed": true,
+  "signature_algorithm": "hmac-sha256",
+  "signed_at": "2026-04-24T12:00:00+00:00",
+  "signed_by": 1,
+  "key_id": "release-signer",
+  "signed_datasets": [
+    "/study/demo/ms_runs/ms1/signal_channels/intensity_values",
+    "/study/demo/ms_runs/ms1/signal_channels/mz_values"
+  ],
+  "signed_dataset_count": 2,
+  "file_sha256": "...",
+  "content_sha256": "..."
+}
+```
+
+**Errors:** `not_found`, `already_encrypted`, `remote_not_supported`,
+`nothing_to_sign`, `sign_failed`, `keyring_not_configured`,
+`key_not_found`, `algorithm_mismatch`, `invalid_keyring`, `unknown_user`.
+
+### `mpgo_verify_signature`
+
+Open the file read-only and verify every dataset that carries an
+`@mpgo_signature` attribute via `mpeg_o.signatures.verify_dataset`.
+Returns a `{hdf5_path: bool}` verdict map plus an aggregate `valid`
+flag that is true iff **every** signed dataset verified under the
+supplied key.
+
+An unsigned file (no datasets with `@mpgo_signature`) raises
+`not_signed` so callers cannot mistake "nothing to check" for
+"verified successfully".
+
+**Input**
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer ≥1 | Alternative 1 (with `key_id`). |
+| `uri` | string | Alternative 2 (with `key_id`). |
+| `key_id` *(required)* | string | Keyring id; must reference an `hmac-sha256` key. |
+
+**Success data**
+
+```json
+{
+  "file_id": 1,
+  "uri": "file:///data/sample.mpgo",
+  "valid": true,
+  "signature_algorithm": "hmac-sha256",
+  "signed_at": "2026-04-24T12:00:00+00:00",
+  "signed_by": 1,
+  "key_id": "release-signer",
+  "verified_datasets": {
+    "/study/demo/ms_runs/ms1/signal_channels/intensity_values": true,
+    "/study/demo/ms_runs/ms1/signal_channels/mz_values": true
+  },
+  "verified_dataset_count": 2
+}
+```
+
+When the key is wrong (or the bytes have been tampered with), individual
+verdicts flip to `false` and the aggregate `valid` becomes `false`. The
+tool still returns `ok: true` — the verification ran; it just didn't
+pass. Reserve `verify_failed` for actual I/O / HDF5 errors.
+
+**Errors:** `not_found`, `not_signed`, `already_encrypted`,
+`remote_not_supported`, `verify_failed`, `keyring_not_configured`,
+`key_not_found`, `algorithm_mismatch`, `invalid_keyring`.
+
+> **Re-signing.** There is no atomic rotate. To switch signing keys,
+> call `mpgo_sign_file` again with the new `key_id` — the old
+> `@mpgo_signature` attributes are overwritten. Rehashes happen
+> automatically.
+
+---
+
 ## Error codes
 
 Stable strings emitted in `error.code`. Codes are grouped by origin.
@@ -382,6 +504,10 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 | `decrypt_failed` | `decrypt_file` | MPEG-O-side exception during decrypt. |
 | `scheme_not_writable` | `push_file` | `remote_uri` scheme is not a writable cloud scheme. |
 | `upload_failed` | `push_file` | fsspec write to the remote URI raised. |
+| `sign_failed` | `sign_file` | MPEG-O / h5py raised while walking or signing datasets. |
+| `verify_failed` | `verify_signature` | MPEG-O / h5py raised while walking or verifying datasets. |
+| `nothing_to_sign` | `sign_file` | No `signal_channels/*_values` datasets found to sign. |
+| `not_signed` | `verify_signature` | File has no datasets with an `@mpgo_signature` attribute. |
 
 ### Keyring
 
@@ -390,6 +516,7 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 | `keyring_not_configured` | `MPGO_KEYRING_PATH` unset. |
 | `key_not_found` | `key_id` absent from the keyring. |
 | `invalid_keyring` | Malformed JSON, wrong algorithm, wrong length, bad base64. |
+| `algorithm_mismatch` | Key's stored `algorithm` doesn't match the tool's requirement (e.g. HMAC key passed to `mpgo_encrypt_file`). |
 
 ### Server
 
