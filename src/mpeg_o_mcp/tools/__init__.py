@@ -34,6 +34,8 @@ from mpeg_o_mcp.tools.get_spectrum import SCHEMA as GET_SPEC_SCHEMA
 from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
 from mpeg_o_mcp.tools.list_files import SCHEMA as LIST_SCHEMA
 from mpeg_o_mcp.tools.list_files import handle as handle_list
+from mpeg_o_mcp.tools.push_file import SCHEMA as PUSH_SCHEMA
+from mpeg_o_mcp.tools.push_file import handle as handle_push
 from mpeg_o_mcp.tools.register import SCHEMA as REGISTER_SCHEMA
 from mpeg_o_mcp.tools.register import handle as handle_register
 from mpeg_o_mcp.tools.reverify import SCHEMA as REVERIFY_SCHEMA
@@ -116,6 +118,15 @@ TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
         "Local files only.",
         DECRYPT_SCHEMA,
         handle_decrypt,
+    ),
+    (
+        "mpgo_push_file",
+        "Upload a local .mpgo to a writable cloud URI (s3://, gs://, abfs://, ...), "
+        "optionally encrypting on the way with an AES-256-GCM key from the server-side "
+        "keyring. Registers the uploaded object in the catalog. The local source is "
+        "never modified.",
+        PUSH_SCHEMA,
+        handle_push,
     ),
 ]
 

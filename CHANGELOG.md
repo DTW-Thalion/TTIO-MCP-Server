@@ -6,6 +6,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0.dev0] — 2026-04-24
+
+### Added
+- Cloud push + encrypt-on-upload (M6).
+  - New `mpgo_push_file` tool. Streams a local `.mpgo` to a writable
+    cloud URI (`s3://`, `gs://`, `gcs://`, `abfs://`, `abfss://`,
+    `az://`) via fsspec, then registers the uploaded object in the
+    catalog through the normal `register_file` path. The local source
+    is never modified.
+  - Optional `key_id` argument enables in-flight AES-256-GCM
+    encryption: a throwaway temp copy is encrypted locally using the
+    existing M5 `SpectralDataset.encrypt_with_key` code path, only
+    the ciphertext is uploaded, and the catalog row is marked
+    `encrypted=true` with `encrypted_algorithm="AES-256-GCM"`. The
+    `level` argument mirrors `mpgo_encrypt_file`
+    (`DATASET_GROUP`/`DATASET`/`DESCRIPTOR_STREAM`/`ACCESS_UNIT`).
+  - Non-writable destinations (`http://`, `https://`, `file://`, or
+    any unrecognised scheme) are rejected up front with the new
+    `scheme_not_writable` error code; fsspec write failures surface
+    as the new `upload_failed` code.
+  - `mpgo_encrypt_file` / `mpgo_decrypt_file` remain local-only.
+    DEPLOYMENT-GUIDE.md now documents the three-tier cloud workflow:
+    `push_file` for fresh uploads, manual pull→encrypt→push for
+    post-hoc encryption of existing cloud objects, and plain
+    `register_file` for plaintext cloud reads.
+
+### Tests
+- 6 new tests in `tests/test_m6_push_file.py` (plaintext push,
+  encrypted push with spectrum read-back, `https://`/`file://`
+  rejection, missing local source, unknown `key_id`). Tests reuse
+  the existing motoserver S3 fixture and skip unless the cloud extras
+  are installed. Suite total: **74 tests** (was 68).
+- `test_tools_surface_has_all_10` renamed to
+  `test_tools_surface_has_all_11` and gains `mpgo_push_file`.
+
 ## [0.5.0.dev0] — 2026-04-24
 
 ### Added
