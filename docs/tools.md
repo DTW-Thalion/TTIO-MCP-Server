@@ -1,6 +1,6 @@
 # Tool reference
 
-The server registers 10 MCP tools. All responses use the envelope:
+The server registers 11 MCP tools. All responses use the envelope:
 
 ```jsonc
 // success
@@ -302,6 +302,57 @@ clears `encrypted_algorithm`, rehashes.
 
 ---
 
+## Cloud push (M6)
+
+### `mpgo_push_file`
+
+Upload a local `.mpgo` to a writable cloud URI and register the uploaded
+object in the catalog in one call. Optionally encrypts the bytes with
+AES-256-GCM in-flight so plaintext never touches the bucket.
+
+**What it does NOT do:** post-hoc encrypt an object that already lives
+in the cloud. For that flow, pull down with your cloud client, run
+`mpgo_encrypt_file` locally, then push the ciphertext with this tool.
+
+**Input**
+
+| Field | Type | Notes |
+|---|---|---|
+| `local_uri` *(required)* | string | Local source: `file://` URI or absolute path. Never modified. |
+| `remote_uri` *(required)* | string | Destination. Must be one of `s3://`, `gs://`, `gcs://`, `abfs://`, `abfss://`, `az://`. |
+| `key_id` | string | When set, a throwaway temp copy is encrypted before upload. The ciphertext is what lands at `remote_uri`. |
+| `level` | enum | `DATASET_GROUP` (default), `DATASET`, `DESCRIPTOR_STREAM`, `ACCESS_UNIT`. Only consulted when `key_id` is set. |
+| `as_user` | string | Ownership for the new catalog row. |
+| `fsspec_kwargs` | object | Shallow-merged on top of `MPGO_MCP_FSSPEC_KWARGS`. Forwarded to both the upload write and the post-upload register. |
+
+**Success data**
+
+```json
+{
+  "file_id": 7,
+  "uri": "s3://bucket/path/sample.mpgo",
+  "remote_uri": "s3://bucket/path/sample.mpgo",
+  "file_sha256": "...",
+  "encrypted": true,
+  "encrypted_algorithm": "AES-256-GCM",
+  "key_id": "prod-2026q2",
+  "counts": {"studies": 1, "runs": 3, "identifications": 42, "quantifications": 0, "provenance_records": 2},
+  "was_update": false
+}
+```
+
+**Errors:** `scheme_not_writable`, `resolve_failed`, `upload_failed`,
+`encrypt_failed`, `keyring_not_configured`, `key_not_found`,
+`invalid_keyring`, `not_mpgo`, `unknown_user`.
+
+The catalog row for `remote_uri` is created (or updated, when
+re-pushing to the same key) through the normal `mpgo_register_file`
+path, so all subsequent query tools (`mpgo_get_file`,
+`mpgo_search_identifications`, `mpgo_get_spectrum`, ...) see the
+uploaded object exactly as if it had been registered manually.
+
+---
+
 ## Error codes
 
 Stable strings emitted in `error.code`. Codes are grouped by origin.
@@ -327,8 +378,10 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 | `already_encrypted` | `encrypt_file` | Catalog marks file encrypted. |
 | `not_encrypted` | `decrypt_file` | Catalog marks file plaintext. |
 | `remote_not_supported` | `encrypt_file` / `decrypt_file` | Cloud URI rejected. |
-| `encrypt_failed` | `encrypt_file` | MPEG-O-side exception during encrypt. |
+| `encrypt_failed` | `encrypt_file` / `push_file` | MPEG-O-side exception during encrypt. |
 | `decrypt_failed` | `decrypt_file` | MPEG-O-side exception during decrypt. |
+| `scheme_not_writable` | `push_file` | `remote_uri` scheme is not a writable cloud scheme. |
+| `upload_failed` | `push_file` | fsspec write to the remote URI raised. |
 
 ### Keyring
 

@@ -215,7 +215,7 @@ async def test_get_quantifications_by_uri(session, ms_file: Path) -> None:
     assert q["total"] == 2
 
 
-async def test_tools_surface_has_all_10(session) -> None:
+async def test_tools_surface_has_all_11(session) -> None:
     from mpeg_o_mcp.tools import TOOLS
 
     names = {t[0] for t in TOOLS}
@@ -230,4 +230,5 @@ async def test_tools_surface_has_all_10(session) -> None:
         "mpgo_get_quantifications",
         "mpgo_encrypt_file",
         "mpgo_decrypt_file",
+        "mpgo_push_file",
     }

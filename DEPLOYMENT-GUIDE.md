@@ -206,10 +206,13 @@ should not check it into version control.
 - **It does not expose HTTP.** stdio only. If you need network
   access, run the server inside a remote-access tool (SSH, a
   VS Code Remote session, etc.) or behind an MCP-over-HTTP proxy.
-- **It does not encrypt cloud files.** Encrypt/decrypt are
-  **local-only** — a cloud URI returns `remote_not_supported`. If
-  you need to encrypt a cloud file, download, encrypt, re-upload
-  manually for now.
+- **It does not encrypt files already in the cloud.**
+  `mpgo_encrypt_file` / `mpgo_decrypt_file` are **local-only** — a
+  cloud URI returns `remote_not_supported`. For publishing a fresh
+  local file, use `mpgo_push_file` with a `key_id` — the file is
+  encrypted locally into a temp copy and only the ciphertext is
+  uploaded. For an object that already sits in the cloud, the
+  workflow is manual: pull it down, encrypt locally, push back.
 
 ---
 
@@ -582,9 +585,39 @@ A good smoke test, end to end:
    `key_id` and you should get `key_required`; pass the same
    `key_id` and you get plaintext back. Finally call
    `mpgo_decrypt_file` to restore the file.
+7. If you have cloud credentials and want to publish a file, call
+   `mpgo_push_file` with `{local_uri: "/path/to/local.mpgo",
+   remote_uri: "s3://your-bucket/path/sample.mpgo"}` — the server
+   streams the bytes up and registers the uploaded object under its
+   `s3://` URI. Add `key_id: "demo"` to have the ciphertext land in
+   the bucket instead of plaintext.
 
 That's the full round trip. Everything else is filters, pagination,
 and edge cases.
+
+### Publishing to the cloud
+
+The server treats cloud encryption in three tiers:
+
+1. **Fresh file, not yet uploaded.** Call `mpgo_push_file` with
+   `key_id` — a temp copy is encrypted locally, the ciphertext is
+   uploaded, the local source is untouched, and the catalog row is
+   marked `encrypted=true`. One upload, no wasted bandwidth.
+2. **File already in the cloud, needs post-hoc encryption.** Object
+   stores are immutable at the object level — there is no "encrypt
+   in place" for a remote object. The workflow is manual:
+   (a) pull the object down with your cloud client,
+   (b) run `mpgo_encrypt_file` on the local copy,
+   (c) re-upload with `mpgo_push_file` (no `key_id`, since the bytes
+   are already ciphertext) to a new key.
+3. **File already in the cloud, plaintext reads only.** Just
+   `mpgo_register_file` the `s3://` URI and use it through the query
+   tools. Nothing to encrypt.
+
+`mpgo_encrypt_file` and `mpgo_decrypt_file` refuse cloud URIs with
+`remote_not_supported` on purpose — doing it server-side would cost
+a download plus an upload per call, and the server has no way to
+cache between requests.
 
 ---
 
