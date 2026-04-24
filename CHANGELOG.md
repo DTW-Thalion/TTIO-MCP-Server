@@ -6,6 +6,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0.dev0] — 2026-04-23
+
+### Added
+- Catalog and file registration (M2).
+  - `mpeg_o_mcp.hashes` — streaming `file_sha256`. `content_sha256` is
+    an alias in M2; semantic-content hashing deferred.
+  - `mpeg_o_mcp.catalog.register_file` — atomic URI → hash → open →
+    extract → upsert into `files` / `studies` / `runs` /
+    `identifications` / `provenance_records`. Idempotent on `uri`.
+  - Four MCP tools, one per concept: `mpgo_register_file`,
+    `mpgo_list_files`, `mpgo_get_file`, `mpgo_reverify`.
+  - Server wires in a SQLAlchemy session factory and runs sync MPEG-O
+    I/O under `asyncio.to_thread`.
+  - 18 new tests: catalog round-trip for MS and NMR fixtures,
+    idempotent re-registration, filters + pagination, drift detection
+    on reverify.
+  - Tool-level error model (`CatalogError` subclasses → structured
+    `{ok: false, error: {code, message}}` responses).
+- Local URIs only in M2 (`file://` and bare paths); `s3://` / `https://`
+  deferred to M4.
+
 ## [0.1.0.dev0] — 2026-04-23
 
 ### Added
