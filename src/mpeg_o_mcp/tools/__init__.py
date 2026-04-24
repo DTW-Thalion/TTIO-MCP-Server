@@ -1,11 +1,15 @@
 """MCP tool registration for mpeg-o-mcp.
 
-A single ``register`` entry point attaches all M2 tools to the given
-lowlevel :class:`mcp.server.lowlevel.Server` instance.
+A single ``register`` entry point attaches every tool to the given
+lowlevel :class:`mcp.server.lowlevel.Server` instance. Handlers that
+need the server-side keyring (``mpgo_encrypt_file``,
+``mpgo_decrypt_file``, ``mpgo_get_spectrum``) are dispatched with a
+``keyring=`` kwarg so the raw key bytes never leave process memory.
 """
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -15,6 +19,11 @@ from mcp.server.lowlevel import Server
 from sqlalchemy.orm import Session, sessionmaker
 
 from mpeg_o_mcp.catalog import CatalogError
+from mpeg_o_mcp.keyring import Keyring, KeyringError
+from mpeg_o_mcp.tools.decrypt_file import SCHEMA as DECRYPT_SCHEMA
+from mpeg_o_mcp.tools.decrypt_file import handle as handle_decrypt
+from mpeg_o_mcp.tools.encrypt_file import SCHEMA as ENCRYPT_SCHEMA
+from mpeg_o_mcp.tools.encrypt_file import handle as handle_encrypt
 from mpeg_o_mcp.tools.get_file import SCHEMA as GET_SCHEMA
 from mpeg_o_mcp.tools.get_file import handle as handle_get
 from mpeg_o_mcp.tools.get_quantifications import SCHEMA as GET_QUANT_SCHEMA
@@ -32,7 +41,7 @@ from mpeg_o_mcp.tools.reverify import handle as handle_reverify
 from mpeg_o_mcp.tools.search_identifications import SCHEMA as SEARCH_ID_SCHEMA
 from mpeg_o_mcp.tools.search_identifications import handle as handle_search_id
 
-Handler = Callable[[Session, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
+Handler = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
 
 
 TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
@@ -92,16 +101,42 @@ TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
         GET_QUANT_SCHEMA,
         handle_get_quant,
     ),
+    (
+        "mpgo_encrypt_file",
+        "Encrypt the intensity channel of every run in-place using AES-256-GCM. "
+        "Resolves the server-side key via key_id; raw keys are never passed over MCP. "
+        "Local files only.",
+        ENCRYPT_SCHEMA,
+        handle_encrypt,
+    ),
+    (
+        "mpgo_decrypt_file",
+        "Decrypt an encrypted .mpgo in place (persist plaintext back to disk). "
+        "Delegates to MPEG-O v1.1.1 SpectralDataset.decrypt_in_place. "
+        "Local files only.",
+        DECRYPT_SCHEMA,
+        handle_decrypt,
+    ),
 ]
 
 
-def register(server: Server, session_factory: sessionmaker[Session]) -> None:
+def register(
+    server: Server,
+    session_factory: sessionmaker[Session],
+    *,
+    keyring: Keyring | None = None,
+) -> None:
+    active_keyring = keyring or Keyring.from_env()
     tool_defs = [
         types.Tool(name=name, description=desc, inputSchema=schema)
         for (name, desc, schema, _handler) in TOOLS
     ]
     name_to_handler: dict[str, Handler] = {
         name: handler for (name, _d, _s, handler) in TOOLS
+    }
+    name_wants_keyring: dict[str, bool] = {
+        name: "keyring" in inspect.signature(handler).parameters
+        for (name, _d, _s, handler) in TOOLS
     }
 
     @server.list_tools()
@@ -113,18 +148,21 @@ def register(server: Server, session_factory: sessionmaker[Session]) -> None:
         handler = name_to_handler.get(name)
         if handler is None:
             return [_err("unknown_tool", f"no such tool: {name!r}")]
+        wants_keyring = name_wants_keyring.get(name, False)
 
         def _do_sync() -> dict[str, Any]:
             with session_factory() as session:
-                # Run the async handler to completion inside this thread's
-                # own loop. Handlers are structured as coroutines so they
-                # can await asyncio.to_thread for MPEG-O I/O; we simply
-                # drive them here via asyncio.run.
-                return asyncio.run(handler(session, arguments))
+                if wants_keyring:
+                    coro = handler(session, arguments, keyring=active_keyring)
+                else:
+                    coro = handler(session, arguments)
+                return asyncio.run(coro)
 
         try:
             result = await asyncio.to_thread(_do_sync)
         except CatalogError as exc:
+            return [_err(exc.code, str(exc))]
+        except KeyringError as exc:
             return [_err(exc.code, str(exc))]
         except Exception as exc:
             return [_err("internal", f"{type(exc).__name__}: {exc}")]

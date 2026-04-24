@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mpeg-o-mcp"
-version = "0.4.0.dev0"
+version = "0.5.0.dev0"
 description = "MCP server exposing MPEG-O (.mpgo) file capabilities to LLM clients"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,7 @@ dependencies = [
     "mcp>=1.0",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
-    "mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.0.0#subdirectory=python",
+    "mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.1.1#subdirectory=python",
 ]
 
 [project.optional-dependencies]

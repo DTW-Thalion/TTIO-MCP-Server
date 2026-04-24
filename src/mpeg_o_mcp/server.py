@@ -15,6 +15,7 @@ from mcp.server.stdio import stdio_server
 from mpeg_o_mcp import __version__
 from mpeg_o_mcp.config import Config
 from mpeg_o_mcp.db.session import make_engine, make_session_factory
+from mpeg_o_mcp.keyring import Keyring
 from mpeg_o_mcp.tools import register as register_tools
 
 
@@ -23,7 +24,8 @@ def build_server(config: Config | None = None) -> tuple[Server, Config]:
     server = Server(name="mpeg-o-mcp", version=__version__)
     engine = make_engine(cfg.db_url)
     session_factory = make_session_factory(engine)
-    register_tools(server, session_factory)
+    keyring = Keyring.from_path(cfg.keyring_path)
+    register_tools(server, session_factory, keyring=keyring)
     return server, cfg
 
 

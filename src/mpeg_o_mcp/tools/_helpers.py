@@ -47,6 +47,7 @@ def file_to_dict(f: File, *, include_counts: bool = False) -> dict[str, Any]:
         "format_version": f.format_version,
         "features": (f.features or {}).get("list", []),
         "encrypted": f.encrypted,
+        "encrypted_algorithm": f.encrypted_algorithm,
         "signed": f.signed,
         "registered_at": f.registered_at.isoformat() if f.registered_at else None,
         "last_verified_at": f.last_verified_at.isoformat() if f.last_verified_at else None,

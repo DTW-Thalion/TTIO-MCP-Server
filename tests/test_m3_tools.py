@@ -112,12 +112,14 @@ async def test_get_run_not_found(session, ms_file: Path) -> None:
         )
 
 
-async def test_get_spectrum_ms(session, ms_file: Path) -> None:
+async def test_get_spectrum_ms(session, empty_keyring, ms_file: Path) -> None:
     reg = await handle_register(session, {"uri": str(ms_file)})
     search = await handle_search(session, {"file_id": reg["file_id"]})
     run_id = search["identifications"][0]["run_id"]
 
-    spec = await handle_get_spec(session, {"run_id": run_id, "spectrum_index": 0})
+    spec = await handle_get_spec(
+        session, {"run_id": run_id, "spectrum_index": 0}, keyring=empty_keyring
+    )
     assert spec["run_id"] == run_id
     assert spec["spectrum_index"] == 0
     assert spec["spectrum_class"] == "MassSpectrum"
@@ -129,21 +131,25 @@ async def test_get_spectrum_ms(session, ms_file: Path) -> None:
     assert spec["metadata"]["ms_level"] == 1.0
 
 
-async def test_get_spectrum_nmr(session, nmr_file: Path) -> None:
+async def test_get_spectrum_nmr(session, empty_keyring, nmr_file: Path) -> None:
     reg = await handle_register(session, {"uri": str(nmr_file)})
     # NMR has exactly one run.
     detail = await handle_get_run(
         session, {"file_id": reg["file_id"], "run_name": "nmr_run"}
     )
     spec = await handle_get_spec(
-        session, {"run_id": detail["id"], "spectrum_index": 0}
+        session,
+        {"run_id": detail["id"], "spectrum_index": 0},
+        keyring=empty_keyring,
     )
     assert spec["spectrum_class"] == "NMRSpectrum"
     assert "chemical_shift" in spec["channels"]
     assert "intensity" in spec["channels"]
 
 
-async def test_get_spectrum_downsampling(session, tmp_path: Path) -> None:
+async def test_get_spectrum_downsampling(
+    session, empty_keyring, tmp_path: Path
+) -> None:
     # 64 points/spectrum; request max_points=10 → stride=7, returned=10.
     p = build_ms_fixture(tmp_path / "dense.mpgo", n_spectra=2, n_points=64)
     reg = await handle_register(session, {"uri": str(p)})
@@ -151,7 +157,9 @@ async def test_get_spectrum_downsampling(session, tmp_path: Path) -> None:
     run_id = search["identifications"][0]["run_id"]
 
     spec = await handle_get_spec(
-        session, {"run_id": run_id, "spectrum_index": 0, "max_points": 10}
+        session,
+        {"run_id": run_id, "spectrum_index": 0, "max_points": 10},
+        keyring=empty_keyring,
     )
     assert spec["truncated"] is True
     assert spec["original_length"] == 64
@@ -160,13 +168,19 @@ async def test_get_spectrum_downsampling(session, tmp_path: Path) -> None:
     assert len(spec["channels"]["mz"]) == spec["returned_length"]
 
 
-async def test_get_spectrum_out_of_range(session, ms_file: Path) -> None:
+async def test_get_spectrum_out_of_range(
+    session, empty_keyring, ms_file: Path
+) -> None:
     reg = await handle_register(session, {"uri": str(ms_file)})
     search = await handle_search(session, {"file_id": reg["file_id"]})
     run_id = search["identifications"][0]["run_id"]
 
     with pytest.raises(InvalidArgument):
-        await handle_get_spec(session, {"run_id": run_id, "spectrum_index": 999})
+        await handle_get_spec(
+            session,
+            {"run_id": run_id, "spectrum_index": 999},
+            keyring=empty_keyring,
+        )
 
 
 async def test_get_quantifications_basic(session, ms_file: Path) -> None:
@@ -201,7 +215,7 @@ async def test_get_quantifications_by_uri(session, ms_file: Path) -> None:
     assert q["total"] == 2
 
 
-async def test_tools_surface_has_all_8(session) -> None:
+async def test_tools_surface_has_all_10(session) -> None:
     from mpeg_o_mcp.tools import TOOLS
 
     names = {t[0] for t in TOOLS}
@@ -214,4 +228,6 @@ async def test_tools_surface_has_all_8(session) -> None:
         "mpgo_get_run",
         "mpgo_get_spectrum",
         "mpgo_get_quantifications",
+        "mpgo_encrypt_file",
+        "mpgo_decrypt_file",
     }

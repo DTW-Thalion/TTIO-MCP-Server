@@ -24,8 +24,9 @@ SCHEMA: dict[str, Any] = {
         "as_user": {
             "type": "string",
             "description": (
-                "Username for ownership. Auto-created if unknown. "
-                "Defaults to the seeded 'system' user. Real auth lands in M5."
+                "Username for ownership. Must already exist in the users "
+                "table — unknown names are rejected with unknown_user. "
+                "Defaults to the seeded 'system' user."
             ),
         },
         "fsspec_kwargs": {

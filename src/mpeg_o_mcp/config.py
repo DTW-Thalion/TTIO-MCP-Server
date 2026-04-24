@@ -5,13 +5,16 @@ M4 adds ``fsspec_kwargs`` — a default JSON dict forwarded to
 Per-call kwargs on ``mpgo_register_file`` / ``mpgo_get_spectrum``
 shallow-merge on top of this default, with per-call keys winning.
 
-Keyring, encryption, and per-user auth land in M5.
+M5 adds ``keyring_path`` (``MPGO_KEYRING_PATH``) — a JSON file that
+maps ``key_id`` to base64-encoded AES-256-GCM bytes. See
+:mod:`mpeg_o_mcp.keyring` for the file format.
 """
 from __future__ import annotations
 
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 DEFAULT_DB_URL = "sqlite:///mpeg_o_mcp.db"
@@ -21,6 +24,7 @@ DEFAULT_DB_URL = "sqlite:///mpeg_o_mcp.db"
 class Config:
     db_url: str
     fsspec_kwargs: dict[str, Any] = field(default_factory=dict)
+    keyring_path: Path | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -38,7 +42,12 @@ class Config:
                     "MPGO_MCP_FSSPEC_KWARGS must be a JSON object"
                 )
             kwargs = parsed
+
+        keyring_raw = os.environ.get("MPGO_KEYRING_PATH", "").strip()
+        keyring_path = Path(keyring_raw).expanduser() if keyring_raw else None
+
         return cls(
             db_url=os.environ.get("MPGO_MCP_DB_URL", DEFAULT_DB_URL),
             fsspec_kwargs=kwargs,
+            keyring_path=keyring_path,
         )

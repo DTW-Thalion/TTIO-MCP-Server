@@ -70,7 +70,8 @@ def test_insert_and_cascade_delete(session):
     assert session.query(Run).count() == 0
     assert session.query(Identification).count() == 0
     assert session.query(ProvenanceRecord).count() == 0
-    assert session.query(User).count() == 1  # users NOT cascaded
+    # users NOT cascaded: the seeded 'system' user plus 'alice' remain.
+    assert session.query(User).count() == 2
 
 
 def _run_alembic(db_url: str, *args: str) -> subprocess.CompletedProcess:

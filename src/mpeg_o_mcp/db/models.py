@@ -48,6 +48,7 @@ class File(Base):
     format_version: Mapped[str] = mapped_column(String, nullable=False)
     features: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     encrypted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    encrypted_algorithm: Mapped[str | None] = mapped_column(String, nullable=True)
     signed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     registered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
