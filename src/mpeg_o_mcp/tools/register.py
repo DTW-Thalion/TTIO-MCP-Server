@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from mpeg_o_mcp.catalog import register_file
+from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -12,13 +13,30 @@ SCHEMA: dict[str, Any] = {
     "properties": {
         "uri": {
             "type": "string",
-            "description": "file:// URI or bare absolute path to the .mpgo file",
+            "description": (
+                "Registration target. Accepts file:// URIs, bare absolute "
+                "paths, or cloud URIs (s3://, https://, gs://, az://). "
+                "Remote URIs stream lazily via fsspec; registration hashes "
+                "the full object, so large cloud files take time."
+            ),
         },
         "display_name": {"type": "string"},
         "as_user": {
             "type": "string",
-            "description": "Username for ownership. Auto-created if unknown. "
-                           "Defaults to the seeded 'system' user. Real auth lands in M4.",
+            "description": (
+                "Username for ownership. Auto-created if unknown. "
+                "Defaults to the seeded 'system' user. Real auth lands in M5."
+            ),
+        },
+        "fsspec_kwargs": {
+            "type": "object",
+            "description": (
+                "Optional keyword arguments forwarded to fsspec.open for "
+                "remote URIs. Shallow-merged on top of MPGO_MCP_FSSPEC_KWARGS "
+                "(per-call keys win). Typical keys: anon, key, secret, profile, "
+                "client_kwargs.endpoint_url."
+            ),
+            "additionalProperties": True,
         },
     },
     "required": ["uri"],
@@ -29,8 +47,13 @@ async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     uri = args["uri"]
     display_name = args.get("display_name")
     as_user = args.get("as_user")
+    fsspec_kwargs = merged_fsspec_kwargs(args.get("fsspec_kwargs"))
     result = register_file(
-        session, uri, display_name=display_name, as_user=as_user
+        session,
+        uri,
+        display_name=display_name,
+        as_user=as_user,
+        fsspec_kwargs=fsspec_kwargs,
     )
     return {
         "file_id": result.file_id,

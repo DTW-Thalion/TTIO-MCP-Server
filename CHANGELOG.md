@@ -6,6 +6,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0.dev0] — 2026-04-23
+
+### Added
+- Cloud URI reads (M4).
+  - `mpeg_o_mcp.catalog.resolve_uri` and a new `ResolvedTarget`
+    dataclass replace the local-only `resolve_local_path` on every
+    caller path (tool lookups, hashing, `SpectralDataset.open`).
+    `resolve_local_path` is retained for back-compat but is no longer
+    called outside catalog-internal code.
+  - Whole-object streaming hash for remote URIs via
+    `mpeg_o.remote.open_remote_file`; remote and local hashing
+    agree byte-for-byte.
+  - `MPGO_MCP_FSSPEC_KWARGS` (JSON object) provides default
+    `fsspec.open` kwargs for every cloud call. Per-call
+    `fsspec_kwargs` on `mpgo_register_file` and `mpgo_get_spectrum`
+    shallow-merge on top, with per-call keys winning.
+  - Supported schemes now include `s3://`, `https://`, `http://`,
+    `gs://`, `gcs://`, `abfs://`, `abfss://`, `az://` — anything
+    `mpeg_o.remote.is_remote_url` recognises.
+  - Six new tests against a `ThreadedMotoServer` S3 endpoint
+    (registration, hash parity with local, catalog lookup survives,
+    lazy spectrum read, env default, per-call override). The suite
+    skips cleanly if `moto[server,s3]`, `flask`, or `s3fs` are
+    missing.
+  - Keyring / encryption / real per-user auth remain deferred to M5.
+
 ## [0.3.0.dev0] — 2026-04-23
 
 ### Added

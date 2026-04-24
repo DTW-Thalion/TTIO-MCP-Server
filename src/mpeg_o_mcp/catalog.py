@@ -27,7 +27,7 @@ from mpeg_o_mcp.db.models import (
 )
 from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
 
-SUPPORTED_SCHEMES = {"file", ""}
+LOCAL_SCHEMES = {"file", ""}
 
 
 class CatalogError(Exception):
@@ -58,6 +58,21 @@ class NotFound(CatalogError):
 
 
 @dataclass
+class ResolvedTarget:
+    """Resolved registration target.
+
+    ``local_path`` is set for local files only (the on-disk absolute
+    path). ``canonical_uri`` is what goes into ``files.uri``.
+    ``is_remote`` short-circuits callers who need to choose between
+    local and fsspec code paths.
+    """
+
+    canonical_uri: str
+    is_remote: bool
+    local_path: Path | None
+
+
+@dataclass
 class RegistrationResult:
     file_id: int
     uri: str
@@ -69,10 +84,14 @@ class RegistrationResult:
 
 
 def resolve_local_path(uri: str) -> Path:
+    """Back-compat helper: local-only resolution.
+
+    Callers that need to accept remote URIs should use :func:`resolve_uri`.
+    """
     parsed = urlparse(uri)
-    if parsed.scheme not in SUPPORTED_SCHEMES:
+    if parsed.scheme not in LOCAL_SCHEMES:
         raise InvalidURI(
-            f"scheme {parsed.scheme!r} not supported in M2; only file:// and bare paths"
+            f"scheme {parsed.scheme!r} is remote; use resolve_uri for cloud support"
         )
     raw = parsed.path if parsed.scheme == "file" else uri
     path = Path(raw).expanduser().resolve()
@@ -81,6 +100,67 @@ def resolve_local_path(uri: str) -> Path:
     if not path.is_file():
         raise ResolveFailed(f"{path} is not a regular file")
     return path
+
+
+def resolve_uri(
+    uri: str,
+    *,
+    fsspec_kwargs: dict[str, Any] | None = None,
+) -> ResolvedTarget:
+    """Resolve a URI into a :class:`ResolvedTarget`.
+
+    Local paths / ``file://`` are canonicalised as in M2. Remote URIs
+    recognised by MPEG-O (``s3://``, ``https://``, ``gs://``, ...) are
+    probed via fsspec to fail fast on 404 / 403, then passed through
+    verbatim (scheme lowercased).
+    """
+    from mpeg_o.remote import is_remote_url
+
+    if is_remote_url(uri):
+        parsed = urlparse(uri)
+        scheme = parsed.scheme.lower()
+        if scheme in LOCAL_SCHEMES:
+            # file:// is technically in REMOTE_SCHEMES; route it local.
+            return _resolve_local(uri)
+        canon = _canonical_remote(uri)
+        _probe_remote(canon, fsspec_kwargs or {})
+        return ResolvedTarget(canonical_uri=canon, is_remote=True, local_path=None)
+
+    return _resolve_local(uri)
+
+
+def _resolve_local(uri: str) -> ResolvedTarget:
+    path = resolve_local_path(uri)
+    return ResolvedTarget(
+        canonical_uri=canonical_uri(path),
+        is_remote=False,
+        local_path=path,
+    )
+
+
+def _canonical_remote(uri: str) -> str:
+    parsed = urlparse(uri)
+    scheme = parsed.scheme.lower()
+    rest = uri[len(parsed.scheme):]  # keep "://..." etc. untouched
+    return scheme + rest
+
+
+def _probe_remote(url: str, fsspec_kwargs: dict[str, Any]) -> None:
+    """Fail fast for obviously-broken remote URIs (404 / auth errors).
+
+    We rely on ``fsspec.open`` to surface HTTP / cloud errors with a
+    meaningful message. We don't read anything — the opener does a
+    HEAD-equivalent to populate ``size``.
+    """
+    import fsspec
+
+    try:
+        with fsspec.open(url, "rb", **fsspec_kwargs):
+            pass
+    except FileNotFoundError as exc:
+        raise ResolveFailed(f"remote object not found: {url}") from exc
+    except Exception as exc:  # PermissionError, botocore errors, etc.
+        raise ResolveFailed(f"cannot access {url}: {type(exc).__name__}: {exc}") from exc
 
 
 def canonical_uri(path: Path) -> str:
@@ -208,22 +288,30 @@ def register_file(
     *,
     display_name: str | None = None,
     as_user: str | None = None,
+    fsspec_kwargs: dict[str, Any] | None = None,
 ) -> RegistrationResult:
     """Resolve, hash, open, extract, and upsert the file row + children.
+
+    ``fsspec_kwargs`` are forwarded to both ``fsspec.open`` (for hashing)
+    and :meth:`mpeg_o.SpectralDataset.open` (for metadata extraction).
+    They're ignored for local paths.
 
     Raises :class:`CatalogError` subclasses on user-visible failures.
     """
     from mpeg_o import SpectralDataset  # lazy import so hashes-only callers don't need it
 
-    path = resolve_local_path(uri)
-    canon = canonical_uri(path)
-    file_sha = hash_file_sha256(path)
-    content_sha = hash_content_sha256(path)
+    kwargs = fsspec_kwargs or {}
+    target = resolve_uri(uri, fsspec_kwargs=kwargs)
+    canon = target.canonical_uri
+    hash_target: str | Path = target.local_path if not target.is_remote else canon
+    file_sha = hash_file_sha256(hash_target, fsspec_kwargs=kwargs)
+    content_sha = hash_content_sha256(hash_target, fsspec_kwargs=kwargs)
 
+    open_target: str | Path = target.local_path if not target.is_remote else canon
     try:
-        dataset = SpectralDataset.open(path)
+        dataset = SpectralDataset.open(open_target, **kwargs)
     except Exception as exc:  # pragma: no cover - MPEG-O raises a variety
-        raise NotMpeg(f"{path}: {type(exc).__name__}: {exc}") from exc
+        raise NotMpeg(f"{open_target}: {type(exc).__name__}: {exc}") from exc
 
     try:
         meta = _extract(dataset)

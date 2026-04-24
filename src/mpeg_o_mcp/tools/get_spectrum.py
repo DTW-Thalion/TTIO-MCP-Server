@@ -12,8 +12,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_local_path
+from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
 from mpeg_o_mcp.db.models import File, Run
+from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 DEFAULT_MAX_POINTS = 1000
 MAX_POINTS_CAP = 100_000
@@ -31,6 +32,15 @@ SCHEMA: dict[str, Any] = {
             "minimum": 1,
             "maximum": MAX_POINTS_CAP,
             "default": DEFAULT_MAX_POINTS,
+        },
+        "fsspec_kwargs": {
+            "type": "object",
+            "description": (
+                "Optional fsspec kwargs for remote URIs. Shallow-merged on top "
+                "of MPGO_MCP_FSSPEC_KWARGS (per-call keys win). Ignored for "
+                "local files."
+            ),
+            "additionalProperties": True,
         },
     },
     "oneOf": [
@@ -51,6 +61,7 @@ class InvalidArgument(CatalogError):
 async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     spectrum_index = int(args["spectrum_index"])
     max_points = int(args.get("max_points", DEFAULT_MAX_POINTS))
+    fsspec_kwargs = merged_fsspec_kwargs(args.get("fsspec_kwargs"))
 
     if "run_id" in args and args["run_id"] is not None:
         run = session.get(Run, int(args["run_id"]))
@@ -78,21 +89,27 @@ async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         raise NotFound(f"orphan run id={run.id}")
 
     try:
-        path = resolve_local_path(f.uri)
+        target = resolve_uri(f.uri, fsspec_kwargs=fsspec_kwargs)
     except CatalogError as exc:
         raise ReadFailed(f"cannot read file at {f.uri}: {exc}") from exc
+
+    open_target = target.local_path if not target.is_remote else target.canonical_uri
 
     from mpeg_o import SpectralDataset
 
     try:
-        dataset = SpectralDataset.open(path)
+        dataset = (
+            SpectralDataset.open(open_target, **fsspec_kwargs)
+            if target.is_remote
+            else SpectralDataset.open(open_target)
+        )
     except Exception as exc:
-        raise ReadFailed(f"{path}: {type(exc).__name__}: {exc}") from exc
+        raise ReadFailed(f"{open_target}: {type(exc).__name__}: {exc}") from exc
 
     try:
         mpgo_run = dataset.all_runs.get(run.name)
         if mpgo_run is None:
-            raise ReadFailed(f"run {run.name!r} not found in {path}")
+            raise ReadFailed(f"run {run.name!r} not found in {open_target}")
         spec = mpgo_run.object_at_index(spectrum_index)
         payload = _serialize_spectrum(
             spec, run, spectrum_index, max_points=max_points

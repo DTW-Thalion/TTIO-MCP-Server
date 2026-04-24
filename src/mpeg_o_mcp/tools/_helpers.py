@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import CatalogError, NotFound, canonical_uri, resolve_local_path
+from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
 from mpeg_o_mcp.db.models import File
 
 
@@ -23,12 +23,12 @@ def lookup_file(session: Session, *, id_or_uri: dict[str, Any]) -> File:
         return row
     if "uri" in id_or_uri and id_or_uri["uri"]:
         raw = id_or_uri["uri"]
-        # Canonicalise to the same form register_file stores.
+        # Canonicalise to the same form register_file stores. For lookups
+        # we don't want to probe cloud (slow, may fail for catalog-only
+        # reads); fall back to the raw URI on any resolver error.
         try:
-            path = resolve_local_path(raw)
-            canon = canonical_uri(path)
+            canon = resolve_uri(raw).canonical_uri
         except CatalogError:
-            # File on disk may have been removed; try raw lookup anyway.
             canon = raw
         row = session.execute(select(File).where(File.uri == canon)).scalar_one_or_none()
         if row is None:
