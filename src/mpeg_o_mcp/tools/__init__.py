@@ -42,6 +42,10 @@ from mpeg_o_mcp.tools.reverify import SCHEMA as REVERIFY_SCHEMA
 from mpeg_o_mcp.tools.reverify import handle as handle_reverify
 from mpeg_o_mcp.tools.search_identifications import SCHEMA as SEARCH_ID_SCHEMA
 from mpeg_o_mcp.tools.search_identifications import handle as handle_search_id
+from mpeg_o_mcp.tools.sign_file import SCHEMA as SIGN_SCHEMA
+from mpeg_o_mcp.tools.sign_file import handle as handle_sign
+from mpeg_o_mcp.tools.verify_signature import SCHEMA as VERIFY_SIG_SCHEMA
+from mpeg_o_mcp.tools.verify_signature import handle as handle_verify_sig
 
 Handler = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
 
@@ -127,6 +131,22 @@ TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
         "never modified.",
         PUSH_SCHEMA,
         handle_push,
+    ),
+    (
+        "mpgo_sign_file",
+        "Sign every signal-channel dataset in a local .mpgo with HMAC-SHA256. "
+        "Resolves the key via key_id; raw keys are never transmitted over MCP. "
+        "Encrypted files are rejected — decrypt first. Local files only.",
+        SIGN_SCHEMA,
+        handle_sign,
+    ),
+    (
+        "mpgo_verify_signature",
+        "Verify every signed dataset in a local .mpgo against an HMAC-SHA256 key "
+        "from the server-side keyring. Returns per-dataset verdicts plus an "
+        "aggregate valid flag. Local files only.",
+        VERIFY_SIG_SCHEMA,
+        handle_verify_sig,
     ),
 ]
 

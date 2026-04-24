@@ -168,6 +168,63 @@ def test_algorithm_for_without_reading_value(tmp_path: Path) -> None:
         kr.algorithm_for("missing")
 
 
+def test_hmac_sha256_variable_length_key(tmp_path: Path) -> None:
+    """M7: HMAC-SHA256 keys are variable-length — length checks are skipped."""
+    from mpeg_o_mcp.keyring import HMAC_SHA256
+
+    raw = b"\xaa" * 20  # arbitrary non-32-byte length
+    p = _write_keyring(
+        tmp_path / "kr.json",
+        {
+            "sig": {
+                "value": base64.b64encode(raw).decode("ascii"),
+                "algorithm": HMAC_SHA256,
+            }
+        },
+    )
+    kr = Keyring.from_path(p)
+    assert kr.get("sig") == raw
+
+
+def test_hmac_sha256_empty_key_rejected(tmp_path: Path) -> None:
+    from mpeg_o_mcp.keyring import HMAC_SHA256
+
+    p = _write_keyring(
+        tmp_path / "kr.json",
+        {
+            "sig": {
+                "value": base64.b64encode(b"").decode("ascii"),
+                "algorithm": HMAC_SHA256,
+            }
+        },
+    )
+    kr = Keyring.from_path(p)
+    with pytest.raises(InvalidKeyring):
+        kr.get("sig")
+
+
+def test_expected_algorithm_mismatch_raises(tmp_path: Path) -> None:
+    """M7: ``get(..., expected_algorithm=...)`` refuses cross-algorithm reuse."""
+    from mpeg_o_mcp.keyring import HMAC_SHA256, AlgorithmMismatch
+
+    raw = b"\x11" * 32
+    p = _write_keyring(
+        tmp_path / "kr.json",
+        {
+            "sig": {
+                "value": base64.b64encode(raw).decode("ascii"),
+                "algorithm": HMAC_SHA256,
+            }
+        },
+    )
+    kr = Keyring.from_path(p)
+    # HMAC entry can't be fetched as AES.
+    with pytest.raises(AlgorithmMismatch):
+        kr.get("sig", expected_algorithm=AES_256_GCM)
+    # But the untagged read still works.
+    assert kr.get("sig") == raw
+
+
 def test_reload_picks_up_file_changes(tmp_path: Path) -> None:
     p = _write_keyring(
         tmp_path / "kr.json",

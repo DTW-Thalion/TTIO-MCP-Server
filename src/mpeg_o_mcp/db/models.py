@@ -50,6 +50,13 @@ class File(Base):
     encrypted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     encrypted_algorithm: Mapped[str | None] = mapped_column(String, nullable=True)
     signed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    signature_algorithm: Mapped[str | None] = mapped_column(String, nullable=True)
+    signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    signed_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
     registered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

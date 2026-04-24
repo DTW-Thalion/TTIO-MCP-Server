@@ -61,6 +61,11 @@ a language model:
 - **Encrypt and decrypt** — protect a file's intensity channels with
   AES-256-GCM using a key stored **server-side** so keys never cross
   the chat.
+- **Sign and verify** — tamper-detect a file's signal-channel datasets
+  with HMAC-SHA256 using a separate server-side key. Signatures are
+  embedded in HDF5 attributes on each dataset; re-running
+  `mpgo_verify_signature` with the same key tells you whether anything
+  changed.
 
 The server runs as a small Python program. By default it talks to one
 client at a time over **standard input/output** (stdio) — the same
@@ -83,7 +88,7 @@ A bird's-eye picture:
                                                     │  └─────────┬──────────┘  │
                                                     │            │             │
                                                     │   ┌────────▼─────────┐   │
-                                                    │   │ 10 tool handlers │   │
+                                                    │   │ 13 tool handlers │   │
                                                     │   └────────┬─────────┘   │
                                                     │            │             │
                                 ┌───────────────────┼────────────┼─────────────┼───────────────────┐
@@ -109,14 +114,19 @@ A bird's-eye picture:
   replies from stdout.
 - **mpeg-o-mcp.** A Python package. Its entry point is `serve()` in
   `src/mpeg_o_mcp/server.py`. It builds an `mcp.server.lowlevel.Server`,
-  registers the 10 tool handlers, and runs the stdio loop.
+  registers the 13 tool handlers, and runs the stdio loop.
 - **Catalog.** A small SQL database (SQLite by default, Postgres
   works too). Seven tables: `users`, `files`, `studies`, `runs`,
   `identifications`, `quantifications`, `provenance_records`. The
   schema is managed by **Alembic** migrations.
 - **Keyring.** A JSON file on disk whose path you control via the
   `MPGO_KEYRING_PATH` environment variable. Maps a short `key_id`
-  like `"demo"` to 32 bytes of AES-256-GCM key material.
+  like `"demo"` to key material plus an `algorithm` tag. Two
+  algorithms are recognised: `"AES-256-GCM"` (exactly 32 bytes, used
+  by encrypt / decrypt / push) and `"hmac-sha256"` (variable-length
+  non-empty, used by sign / verify). Each tool pins the algorithm it
+  expects, so an AES key cannot be used to sign and an HMAC key
+  cannot be used to encrypt.
 - **MPEG-O library.** The Python package `mpeg-o` does all the real
   `.mpgo` reading, writing, encrypting, decrypting. Our server is
   mostly orchestration — it decides *when* to call MPEG-O, and what
@@ -341,7 +351,7 @@ and other remote URIs.
 pytest -q
 ```
 
-You should see a line like `68 passed in 6s`. If any test fails, stop
+You should see a line like `84 passed in 6s`. If any test fails, stop
 and look at the error — something in your environment is off (wrong
 Python version, missing system library, corrupt clone). See
 [Troubleshooting](#troubleshooting).
@@ -462,11 +472,38 @@ export MPGO_KEYRING_PATH="$KEYRING"
 
 You can add more keys to the same file later — just add another
 entry under `"keys"`. Each key has its own `key_id` (the map key),
-its own base64 `value`, and the same `algorithm: "AES-256-GCM"`.
+its own base64 `value`, and an `algorithm` tag.
 
-**Do not commit this file anywhere.** If you lose the key, files
-encrypted with it cannot be recovered. If you leak it, anyone who
-has it can decrypt those files.
+**Step 4 (optional)** — add an HMAC-SHA256 key for signing. Signing
+keys use a different algorithm tag; the server refuses to cross the
+streams:
+
+```bash
+SIGN_KEY=$(python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')
+
+python3 - <<PY
+import json, pathlib
+p = pathlib.Path("$KEYRING")
+doc = json.loads(p.read_text())
+doc["keys"]["release-signer"] = {
+    "value": "$SIGN_KEY",
+    "algorithm": "hmac-sha256",
+    "description": "HMAC-SHA256 release signing key",
+}
+p.write_text(json.dumps(doc, indent=2))
+PY
+```
+
+`hmac-sha256` keys can be any non-empty length — 32 bytes is the
+conventional HMAC-SHA256 key size and what MPEG-O's own tests use, so
+it's a sensible default. `AES-256-GCM` keys must be exactly 32 bytes.
+
+**Do not commit this file anywhere.** If you lose an encryption key,
+files encrypted with it cannot be recovered. If you lose a signing
+key, you can no longer prove integrity of anything signed with it
+(and you also can't sign anything new that verifies against the same
+key). If you leak either, treat the protected files as compromised
+and re-key.
 
 ---
 
@@ -591,6 +628,13 @@ A good smoke test, end to end:
    streams the bytes up and registers the uploaded object under its
    `s3://` URI. Add `key_id: "demo"` to have the ciphertext land in
    the bucket instead of plaintext.
+8. If you added an `hmac-sha256` key to the keyring, call
+   `mpgo_sign_file` with `{id, key_id: "release-signer"}` — the
+   server stamps every `signal_channels/*_values` dataset with an
+   HMAC-SHA256 tag. Call `mpgo_verify_signature` with the same key
+   and you should get `valid: true` plus a per-dataset verdict map.
+   Pass a different `key_id` and `valid` flips to `false` without
+   raising.
 
 That's the full round trip. Everything else is filters, pagination,
 and edge cases.
@@ -618,6 +662,58 @@ The server treats cloud encryption in three tiers:
 `remote_not_supported` on purpose — doing it server-side would cost
 a download plus an upload per call, and the server has no way to
 cache between requests.
+
+### Signing `.mpgo` files
+
+Signing stamps each `signal_channels/*_values` dataset with an
+HMAC-SHA256 tag (stored in the `@mpgo_signature` HDF5 attribute on
+that dataset). Anyone who holds the matching key can later run
+`mpgo_verify_signature` to confirm that the dataset bytes have not
+changed since signing.
+
+Signing is **local-only** and operates on **plaintext** values — a
+signed file can be encrypted afterwards for transport, but signing an
+already-encrypted file is rejected (`already_encrypted`): the
+canonical byte layout HMAC depends on the original plaintext values.
+
+Minimal round-trip:
+
+1. Register the file (local path): `mpgo_register_file`.
+2. Sign it with an `hmac-sha256` key from the keyring:
+
+   ```json
+   {"id": 1, "key_id": "release-signer"}
+   ```
+
+   `mpgo_sign_file` responds with `signed_datasets: ["/study/.../intensity_values", ...]`
+   and fresh `file_sha256` / `content_sha256`.
+3. Verify at any later point with the same `key_id`:
+
+   ```json
+   {"id": 1, "key_id": "release-signer"}
+   ```
+
+   `mpgo_verify_signature` returns `valid: true` if every signed
+   dataset verifies. Individual verdicts appear in `verified_datasets`
+   — if some are `false`, those particular datasets have been
+   tampered with (or are being verified with the wrong key).
+
+**Re-signing with a new key.** Call `mpgo_sign_file` again with the
+new `key_id`; the `@mpgo_signature` attribute on each dataset is
+overwritten. There's no atomic rotate — file attributes only ever
+hold one signature, and it's always the most recent one.
+
+**Signing for cloud distribution.** Sign the local file, then
+`mpgo_push_file` (with or without encryption) to upload. Verification
+against a cloud URI is **not** supported — download the object
+locally, re-register, then verify. This keeps the verify path on
+byte-stable h5py reads.
+
+**Unsigned files raise a distinct error.** Calling
+`mpgo_verify_signature` on a file whose datasets carry no
+`@mpgo_signature` attributes raises `not_signed`, not `valid: false`.
+Callers should treat `not_signed` as "no claim to verify" rather than
+"failed verification."
 
 ---
 
@@ -738,11 +834,27 @@ Expected. The catalog has `encrypted=true` for that file. Pass
 The JSON keyring file is malformed. Common causes:
 
 - `value` is not base64 (check for stray newlines or quotes).
-- The decoded key isn't exactly 32 bytes.
-- `algorithm` is present but not `"AES-256-GCM"`.
+- The `algorithm` is missing or unknown (only `"AES-256-GCM"` and
+  `"hmac-sha256"` are recognised).
+- An `AES-256-GCM` entry decodes to something other than 32 bytes.
+- An `hmac-sha256` entry decodes to zero bytes.
 - The outer structure isn't `{"keys": {...}}`.
 
 Re-generate with the one-liner in [Setting up a keyring](#setting-up-a-keyring).
+
+### `algorithm_mismatch`
+
+A tool was given a `key_id` whose stored algorithm doesn't match the
+algorithm the tool requires. Typical triggers:
+
+- Passing an `hmac-sha256` key to `mpgo_encrypt_file`,
+  `mpgo_decrypt_file`, `mpgo_push_file`, or `mpgo_get_spectrum`
+  (these want `AES-256-GCM`).
+- Passing an `AES-256-GCM` key to `mpgo_sign_file` or
+  `mpgo_verify_signature` (these want `hmac-sha256`).
+
+Add a key with the right algorithm tag to the keyring and use its
+`key_id` instead — keys cannot be used across algorithms.
 
 ### The client shows "mpeg-o-mcp disconnected" right after starting
 

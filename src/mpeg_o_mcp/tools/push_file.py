@@ -128,7 +128,7 @@ async def handle(
     staged: Path | None = None
     try:
         if key_id:
-            key = keyring.get(key_id)
+            key = keyring.get(key_id, expected_algorithm=AES_256_GCM)
             staged = _stage_encrypted_copy(local_path, key, level_name)
             upload_source: Path = staged
         else:
