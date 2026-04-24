@@ -125,6 +125,13 @@ alembic upgrade head && alembic downgrade base   # round-trip
 CI runs the same commands across Python 3.11 and 3.12 on Ubuntu
 (`.github/workflows/ci.yml`).
 
+## Deployment
+
+[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) walks through install,
+configuration, database bootstrap, client wire-up, and common
+troubleshooting in layperson terms. Read it if this is the first
+machine you're bringing up.
+
 ## Milestone handoffs
 
 Each milestone ships with a `HANDOFF-M<n>.md` capturing scope,
