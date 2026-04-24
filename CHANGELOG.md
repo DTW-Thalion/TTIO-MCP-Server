@@ -6,6 +6,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0.dev0] — 2026-04-24
+
+### Added
+- MCP conformance test suite (M8).
+  - New `tests/test_m8_conformance.py` drives the real
+    `mpeg-o-mcp` subprocess via the `mcp` Python client SDK
+    (`stdio_client` + `ClientSession`) rather than calling tool
+    handlers in-process. Every prior test suite exercises the
+    handlers directly; M8 proves the server works as an actual MCP
+    server: JSON-RPC 2.0 over stdio, `initialize` handshake, valid
+    `tools/list` shape, and `tools/call` round-trips through the
+    `{"ok", "data"|"error"}` text envelope.
+  - Four tests cover:
+    - `initialize` handshake + `list_tools` (all 13 tool names
+      present; every schema has `type=object`, rejects
+      `additionalProperties`, and declares `properties`).
+    - Linear happy path across 12 of 13 tools on a local MS
+      fixture: `register_file` → `list_files` → `get_file` →
+      `get_run` → `search_identifications` →
+      `get_quantifications` → `get_spectrum` (plaintext) →
+      `sign_file` → `verify_signature` → `reverify` →
+      `encrypt_file` → `get_spectrum` (with `key_id`, encrypted) →
+      `decrypt_file`. State accumulates inside one subprocess —
+      the catalog row transitions through real `signed` /
+      `encrypted` flips.
+    - `mpgo_push_file` end-to-end against the shared
+      `ThreadedMotoServer` S3 fixture (skipped when the `cloud`
+      extras aren't installed).
+    - Structured error envelope — a lookup by a nonexistent id
+      returns `{"ok": false, "error": {"code": "not_found", ...}}`
+      on the wire.
+  - The subprocess is booted fresh per test; env vars
+    (`MPGO_MCP_DB_URL`, `MPGO_KEYRING_PATH`, optionally
+    `MPGO_MCP_FSSPEC_KWARGS`) flow through `StdioServerParameters`
+    so tests are hermetic.
+  - No new runtime dependencies. `mcp` was already a direct dep.
+
+### Tests
+- 4 new tests in `tests/test_m8_conformance.py`. One is conditionally
+  skipped on machines without moto / s3fs — the S3 conformance step
+  is only meaningful with the cloud fixture available. Suite total:
+  **88 tests** (was 84).
+
 ## [0.7.0.dev0] — 2026-04-24
 
 ### Added
