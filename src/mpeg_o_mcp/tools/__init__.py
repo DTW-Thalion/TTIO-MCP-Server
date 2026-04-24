@@ -17,12 +17,20 @@ from sqlalchemy.orm import Session, sessionmaker
 from mpeg_o_mcp.catalog import CatalogError
 from mpeg_o_mcp.tools.get_file import SCHEMA as GET_SCHEMA
 from mpeg_o_mcp.tools.get_file import handle as handle_get
+from mpeg_o_mcp.tools.get_quantifications import SCHEMA as GET_QUANT_SCHEMA
+from mpeg_o_mcp.tools.get_quantifications import handle as handle_get_quant
+from mpeg_o_mcp.tools.get_run import SCHEMA as GET_RUN_SCHEMA
+from mpeg_o_mcp.tools.get_run import handle as handle_get_run
+from mpeg_o_mcp.tools.get_spectrum import SCHEMA as GET_SPEC_SCHEMA
+from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
 from mpeg_o_mcp.tools.list_files import SCHEMA as LIST_SCHEMA
 from mpeg_o_mcp.tools.list_files import handle as handle_list
 from mpeg_o_mcp.tools.register import SCHEMA as REGISTER_SCHEMA
 from mpeg_o_mcp.tools.register import handle as handle_register
 from mpeg_o_mcp.tools.reverify import SCHEMA as REVERIFY_SCHEMA
 from mpeg_o_mcp.tools.reverify import handle as handle_reverify
+from mpeg_o_mcp.tools.search_identifications import SCHEMA as SEARCH_ID_SCHEMA
+from mpeg_o_mcp.tools.search_identifications import handle as handle_search_id
 
 Handler = Callable[[Session, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
 
@@ -54,6 +62,35 @@ TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
         "Returns drift=true if the file_sha256 has changed since registration.",
         REVERIFY_SCHEMA,
         handle_reverify,
+    ),
+    (
+        "mpgo_search_identifications",
+        "Search identifications across all registered files. Filter by chebi_id, "
+        "name substring, minimum score, acquisition mode, or file. Paginated.",
+        SEARCH_ID_SCHEMA,
+        handle_search_id,
+    ),
+    (
+        "mpgo_get_run",
+        "Get per-run detail: run metadata plus its identifications and any "
+        "quantifications scoped to this run (sample_ref == run name or NULL).",
+        GET_RUN_SCHEMA,
+        handle_get_run,
+    ),
+    (
+        "mpgo_get_spectrum",
+        "Read a single spectrum from disk. Returns channel arrays and metadata. "
+        "Arrays longer than max_points are downsampled via stride; truncated=true "
+        "in the response when this happens.",
+        GET_SPEC_SCHEMA,
+        handle_get_spec,
+    ),
+    (
+        "mpgo_get_quantifications",
+        "List quantifications for a file with optional chebi_id / sample_ref / "
+        "min_abundance filters. Paginated.",
+        GET_QUANT_SCHEMA,
+        handle_get_quant,
     ),
 ]
 

@@ -71,6 +71,9 @@ class File(Base):
     identifications: Mapped[list[Identification]] = relationship(
         back_populates="file", cascade="all, delete-orphan", passive_deletes=True
     )
+    quantifications: Mapped[list[Quantification]] = relationship(
+        back_populates="file", cascade="all, delete-orphan", passive_deletes=True
+    )
     provenance_records: Mapped[list[ProvenanceRecord]] = relationship(
         back_populates="file", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -134,6 +137,27 @@ class Identification(Base):
 
     __table_args__ = (
         Index("ix_identifications_chebi_score", "chebi_id", "score"),
+    )
+
+
+class Quantification(Base):
+    __tablename__ = "quantifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    file_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("files.id", ondelete="CASCADE"), nullable=False
+    )
+    chebi_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    sample_ref: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    abundance: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    normalization_method: Mapped[str | None] = mapped_column(String, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    file: Mapped[File] = relationship(back_populates="quantifications")
+
+    __table_args__ = (
+        Index("ix_quantifications_chebi_sample", "chebi_id", "sample_ref"),
     )
 
 

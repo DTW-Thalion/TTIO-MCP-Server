@@ -58,6 +58,7 @@ def file_to_dict(f: File, *, include_counts: bool = False) -> dict[str, Any]:
             "studies": len(f.studies),
             "runs": len(f.runs),
             "identifications": len(f.identifications),
+            "quantifications": len(f.quantifications),
             "provenance_records": len(f.provenance_records),
         }
     return out

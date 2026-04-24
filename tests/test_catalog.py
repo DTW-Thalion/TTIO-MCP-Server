@@ -13,7 +13,14 @@ from mpeg_o_mcp.catalog import (
     register_file,
     resolve_local_path,
 )
-from mpeg_o_mcp.db.models import File, Identification, ProvenanceRecord, Run, Study
+from mpeg_o_mcp.db.models import (
+    File,
+    Identification,
+    ProvenanceRecord,
+    Quantification,
+    Run,
+    Study,
+)
 from mpeg_o_mcp.hashes import hash_file_sha256
 from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
@@ -60,6 +67,7 @@ def test_register_ms_roundtrip(session, ms_file: Path) -> None:
         "studies": 1,
         "runs": 1,
         "identifications": 2,
+        "quantifications": 2,
         "provenance_records": 1,
     }
     assert result.format_version == "1.1"
@@ -84,6 +92,10 @@ def test_register_ms_roundtrip(session, ms_file: Path) -> None:
     assert len(provs) == 1
     assert provs[0].software == "demo-writer 1.0"
     assert provs[0].input_refs == ["urn:raw:sample-a"]
+    quants = session.query(Quantification).filter(Quantification.file_id == f.id).all()
+    assert len(quants) == 2
+    assert {q.chebi_id for q in quants} == {"CHEBI:15377", "CHEBI:28001"}
+    assert all(q.sample_ref == "run_0001" for q in quants)
 
 
 def test_register_nmr_roundtrip(session, nmr_file: Path) -> None:
@@ -108,6 +120,7 @@ def test_register_is_idempotent(session, ms_file: Path) -> None:
     assert session.query(Study).count() == 1
     assert session.query(Run).count() == 1
     assert session.query(Identification).count() == 2
+    assert session.query(Quantification).count() == 2
     assert session.query(ProvenanceRecord).count() == 1
 
 
