@@ -57,6 +57,10 @@ class NotFound(CatalogError):
     code = "not_found"
 
 
+class UnknownUser(CatalogError):
+    code = "unknown_user"
+
+
 @dataclass
 class ResolvedTarget:
     """Resolved registration target.
@@ -168,13 +172,21 @@ def canonical_uri(path: Path) -> str:
 
 
 def _resolve_as_user(session: Session, as_user: str | None) -> int:
+    """Resolve ``as_user`` → user id, requiring an existing row.
+
+    ``None`` resolves to the seeded ``system`` user, which the M1
+    baseline migration always inserts. Any other name must already
+    exist in the ``users`` table — unknown names raise
+    :class:`UnknownUser` rather than auto-creating. Real auth still
+    lands later; this just enforces registration of principals.
+    """
     name = as_user or "system"
     row = session.execute(select(User).where(User.name == name)).scalar_one_or_none()
     if row is None:
-        # M2 behaviour: auto-create unknown user. Real auth lands in M4.
-        row = User(name=name)
-        session.add(row)
-        session.flush()
+        raise UnknownUser(
+            f"no user named {name!r}; create it with an admin workflow "
+            f"before using as_user={name!r}"
+        )
     return row.id
 
 

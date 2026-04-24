@@ -85,7 +85,7 @@ def test_get_file_after_s3_register(session, s3_ms_fixture):
     assert got_by_uri["id"] == reg["file_id"]
 
 
-def test_get_spectrum_streams_from_s3(session, s3_ms_fixture):
+def test_get_spectrum_streams_from_s3(session, empty_keyring, s3_ms_fixture):
     from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
     from mpeg_o_mcp.tools.register import handle as handle_register
 
@@ -103,6 +103,7 @@ def test_get_spectrum_streams_from_s3(session, s3_ms_fixture):
                 "spectrum_index": 0,
                 "fsspec_kwargs": kwargs,
             },
+            keyring=empty_keyring,
         )
     )
     assert spec["spectrum_index"] == 0

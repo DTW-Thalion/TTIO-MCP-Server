@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
 from mpeg_o_mcp.db.models import File, Run
+from mpeg_o_mcp.keyring import Keyring
 from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 DEFAULT_MAX_POINTS = 1000
@@ -42,6 +43,14 @@ SCHEMA: dict[str, Any] = {
             ),
             "additionalProperties": True,
         },
+        "key_id": {
+            "type": "string",
+            "description": (
+                "Keyring id for decrypting the intensity channel in-memory "
+                "(read-only; disk bytes are not touched). Required when the "
+                "catalog row's encrypted=true."
+            ),
+        },
     },
     "oneOf": [
         {"required": ["run_id", "spectrum_index"]},
@@ -58,10 +67,20 @@ class InvalidArgument(CatalogError):
     code = "invalid_argument"
 
 
-async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
+class KeyRequired(CatalogError):
+    code = "key_required"
+
+
+async def handle(
+    session: Session,
+    args: dict[str, Any],
+    *,
+    keyring: Keyring,
+) -> dict[str, Any]:
     spectrum_index = int(args["spectrum_index"])
     max_points = int(args.get("max_points", DEFAULT_MAX_POINTS))
     fsspec_kwargs = merged_fsspec_kwargs(args.get("fsspec_kwargs"))
+    key_id = args.get("key_id")
 
     if "run_id" in args and args["run_id"] is not None:
         run = session.get(Run, int(args["run_id"]))
@@ -107,6 +126,21 @@ async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
         raise ReadFailed(f"{open_target}: {type(exc).__name__}: {exc}") from exc
 
     try:
+        if f.encrypted:
+            if not key_id:
+                raise KeyRequired(
+                    f"file id={f.id} is encrypted "
+                    f"(algorithm={f.encrypted_algorithm or 'unknown'}); "
+                    f"pass key_id to decrypt at read time"
+                )
+            key = keyring.get(key_id)
+            try:
+                dataset.decrypt_with_key(key)
+            except Exception as exc:
+                raise ReadFailed(
+                    f"decrypt_with_key failed on {open_target}: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
         mpgo_run = dataset.all_runs.get(run.name)
         if mpgo_run is None:
             raise ReadFailed(f"run {run.name!r} not found in {open_target}")

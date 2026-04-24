@@ -6,6 +6,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0.dev0] — 2026-04-24
+
+### Added
+- Encryption tools and server-side keyring (M5).
+  - `mpeg_o_mcp.keyring` — JSON-file-backed keyring at
+    `MPGO_KEYRING_PATH`. Keys are stored as base64 values with an
+    `AES-256-GCM` algorithm tag and optional `created_at` /
+    `description` metadata. Raw key bytes never cross the MCP wire;
+    tools reference keys by `key_id` and the server resolves them
+    in-process. Missing files are treated as empty keyrings; invalid
+    JSON, missing values, wrong algorithms, non-32-byte keys, or
+    invalid base64 surface as structured `invalid_keyring` errors.
+  - Two new MCP tools:
+    - `mpgo_encrypt_file` — in-place AES-256-GCM intensity encryption
+      via MPEG-O `SpectralDataset.encrypt_with_key`. Takes `key_id`
+      and optional `level` (`DATASET_GROUP` default, plus `DATASET`,
+      `DESCRIPTOR_STREAM`, `ACCESS_UNIT`). Rehashes on-disk bytes and
+      updates `files.encrypted` / `files.encrypted_algorithm` /
+      `file_sha256` / `content_sha256` / `last_verified_at`. Local
+      files only.
+    - `mpgo_decrypt_file` — persist plaintext back to disk via the
+      MPEG-O v1.1.1 `SpectralDataset.decrypt_in_place` API. Mirrors
+      the encrypt catalog bookkeeping (clears `encrypted_algorithm`,
+      rehashes). Local files only.
+  - `mpgo_get_spectrum` gains a `key_id` parameter. Reading an
+    encrypted file without `key_id` raises the new `key_required`
+    error; with a key, the tool rehydrates plaintext in memory via
+    `decrypt_with_key` — the disk bytes are not touched.
+  - Alembic migration `65fda2fc1cfe_encrypted_algorithm` adds a
+    nullable `files.encrypted_algorithm` column.
+  - `as_user` is now validated: unknown names raise the new
+    `unknown_user` error instead of auto-creating a row. The seeded
+    `system` user remains the default.
+  - Runtime dependency bumped to `mpeg-o @ v1.1.1` for
+    `SpectralDataset.decrypt_in_place`.
+  - 25 new tests across three suites:
+    - `tests/test_m5_keyring.py` — file-format validation, base64 /
+      algorithm / length errors, `reload()`, env/path constructors.
+    - `tests/test_m5_encrypt_decrypt.py` — encrypt → reverify →
+      get_spectrum → decrypt round-trip, duplicate encrypt rejected,
+      decrypt-without-encrypt rejected, remote URIs rejected, wrong
+      key surfaces `read_failed`.
+    - `tests/test_m5_as_user.py` — unknown name raises, no side-effect
+      row creation, existing user accepted.
+
 ## [0.4.0.dev0] — 2026-04-23
 
 ### Added
