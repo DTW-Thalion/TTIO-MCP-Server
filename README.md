@@ -23,9 +23,10 @@ keyring and never cross the MCP wire — tools reference them by
 | M5: Keyring & encryption          | ✅ shipped | `mpgo_encrypt_file`, `mpgo_decrypt_file`, `MPGO_KEYRING_PATH`, `as_user` hardening. |
 | M6: Cloud push + encrypt-on-upload | ✅ shipped | `mpgo_push_file` — streams local `.mpgo` to `s3://`/`gs://`/`abfs://`, optional in-flight AES-256-GCM. |
 | M7: HMAC-SHA256 signatures         | ✅ shipped | `mpgo_sign_file` + `mpgo_verify_signature` over every `signal_channels/*_values` dataset. |
-| M8: Conformance + publish         | planned   | MCP conformance suite, TestPyPI release. |
+| M8: MCP conformance                | ✅ shipped | End-to-end conformance suite via the real `mcp` Python client over stdio — all 13 tools, error envelope. |
+| M9: TestPyPI release               | planned   | Tag-driven GitHub Actions → TestPyPI publish. Gated on MPEG-O M40 (PyPI wheels). |
 
-Current version: **0.7.0.dev0** (Alpha). 84 tests, ruff clean, SQLite
+Current version: **0.8.0.dev0** (Alpha). 88 tests, ruff clean, SQLite
 and Postgres-portable.
 
 ## Requirements
@@ -123,7 +124,7 @@ Error codes are stable per tool contract — see [docs/tools.md](docs/tools.md).
 ## Development
 
 ```bash
-pytest -q                                    # 84 tests
+pytest -q                                    # 88 tests
 ruff check .
 alembic upgrade head && alembic downgrade base   # round-trip
 ```
@@ -152,6 +153,7 @@ retroactively edited.
 - [HANDOFF-M5.md](HANDOFF-M5.md) — keyring & encryption
 - [HANDOFF-M6.md](HANDOFF-M6.md) — cloud push + encrypt-on-upload
 - [HANDOFF-M7.md](HANDOFF-M7.md) — HMAC-SHA256 dataset signatures
+- [HANDOFF-M8.md](HANDOFF-M8.md) — MCP conformance suite
 
 ## License
 
