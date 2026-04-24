@@ -5,7 +5,7 @@ on:
   pull_request:
 
 env:
-  MPEG_O_TAG: v1.0.0
+  MPEG_O_TAG: v1.1.1
   MPEG_O_REPO: DTW-Thalion/MPEG-O
 
 jobs:
