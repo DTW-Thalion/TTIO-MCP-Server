@@ -25,6 +25,7 @@ class Config:
     db_url: str
     fsspec_kwargs: dict[str, Any] = field(default_factory=dict)
     keyring_path: Path | None = None
+    intake_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -46,8 +47,12 @@ class Config:
         keyring_raw = os.environ.get("MPGO_KEYRING_PATH", "").strip()
         keyring_path = Path(keyring_raw).expanduser() if keyring_raw else None
 
+        intake_raw = os.environ.get("MPGO_MCP_INTAKE_DIR", "").strip()
+        intake_dir = Path(intake_raw).expanduser().resolve() if intake_raw else None
+
         return cls(
             db_url=os.environ.get("MPGO_MCP_DB_URL", DEFAULT_DB_URL),
             fsspec_kwargs=kwargs,
             keyring_path=keyring_path,
+            intake_dir=intake_dir,
         )

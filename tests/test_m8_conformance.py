@@ -9,9 +9,9 @@ round-trips through the JSON envelope.
 
 Four tests cover:
 
-- Initialize handshake and ``list_tools`` surface (all 13 tool names,
+- Initialize handshake and ``list_tools`` surface (all 14 tool names,
   every schema is valid JSON Schema).
-- Happy path across 12 of the 13 tools on a local MS fixture:
+- Happy path across 12 of the 14 tools on a local MS fixture:
   register → list → get → get_run → search_identifications →
   get_quantifications → get_spectrum → sign → verify_signature →
   reverify → encrypt → get_spectrum (with ``key_id``) → decrypt.
@@ -61,6 +61,7 @@ EXPECTED_TOOLS = {
     "mpgo_push_file",
     "mpgo_sign_file",
     "mpgo_verify_signature",
+    "mpgo_launch_uploader",
 }
 
 
@@ -171,7 +172,7 @@ async def test_conformance_initialize_and_list_tools(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Happy-path round-trip — 12 of 13 tools on a local fixture
+# 2. Happy-path round-trip — 12 of 14 tools on a local fixture
 # ---------------------------------------------------------------------------
 
 

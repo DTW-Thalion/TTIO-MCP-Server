@@ -88,7 +88,7 @@ A bird's-eye picture:
                                                     │  └─────────┬──────────┘  │
                                                     │            │             │
                                                     │   ┌────────▼─────────┐   │
-                                                    │   │ 13 tool handlers │   │
+                                                    │   │ 14 tool handlers │   │
                                                     │   └────────┬─────────┘   │
                                                     │            │             │
                                 ┌───────────────────┼────────────┼─────────────┼───────────────────┐
@@ -114,7 +114,7 @@ A bird's-eye picture:
   replies from stdout.
 - **mpeg-o-mcp.** A Python package. Its entry point is `serve()` in
   `src/mpeg_o_mcp/server.py`. It builds an `mcp.server.lowlevel.Server`,
-  registers the 13 tool handlers, and runs the stdio loop.
+  registers the 14 tool handlers, and runs the stdio loop.
 - **Catalog.** A small SQL database (SQLite by default, Postgres
   works too). Seven tables: `users`, `files`, `studies`, `runs`,
   `identifications`, `quantifications`, `provenance_records`. The
@@ -351,7 +351,7 @@ and other remote URIs.
 pytest -q
 ```
 
-You should see a line like `84 passed in 6s`. If any test fails, stop
+You should see a line like `115 passed in 10s`. If any test fails, stop
 and look at the error — something in your environment is off (wrong
 Python version, missing system library, corrupt clone). See
 [Troubleshooting](#troubleshooting).
@@ -369,7 +369,7 @@ environment problem, not something for you to fix in the code.
 
 ## Configure the environment
 
-The server is controlled by **three environment variables**. All of
+The server is controlled by **four environment variables**. All of
 them are optional — the defaults give you a working single-user,
 local-only install — but you'll want to set at least one of them if
 you deploy beyond a single developer's laptop.
@@ -379,6 +379,7 @@ you deploy beyond a single developer's laptop.
 | `MPGO_MCP_DB_URL` | Which database holds the catalog. | `sqlite:///mpeg_o_mcp.db` (a file in the current directory) |
 | `MPGO_MCP_FSSPEC_KWARGS` | Default options passed to every cloud-filesystem call. | *(none)* |
 | `MPGO_KEYRING_PATH` | Path to the JSON file that holds encryption keys. | *(none — encryption tools refuse to run)* |
+| `MPGO_MCP_INTAKE_DIR` | Directory where `mpgo_launch_uploader` stages files picked by the user. | *(none — the uploader tool refuses to run)* |
 
 Set them **in the shell that launches `mpeg-o-mcp`**. If you're
 wiring the server into Claude Code or another client, you'll set
@@ -504,6 +505,38 @@ key, you can no longer prove integrity of anything signed with it
 (and you also can't sign anything new that verifies against the same
 key). If you leak either, treat the protected files as compromised
 and re-key.
+
+### Setting up the intake directory
+
+`mpgo_launch_uploader` pops a tkinter file-picker on the same
+desktop the server is running on (MCP stdio is same-machine by
+definition) and copies the chosen file into whatever directory
+`MPGO_MCP_INTAKE_DIR` points to. Without that env var set, the tool
+refuses to run.
+
+```bash
+export MPGO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
+```
+
+The server auto-creates the directory on first use, so you don't need
+`mkdir -p`. A same-name collision (`sample.mpgo` already in intake)
+appends a UTC timestamp (`sample-20260424T120000Z.mpgo`); a second
+collision tacks on an integer. The original on disk is never touched.
+
+After a file is staged, call `mpgo_register_file` against the
+returned `destination` to bring it into the catalog — the uploader
+itself writes no catalog rows.
+
+**Display required.** The tkinter picker and progress window need an
+active display session:
+- On Linux, an `$DISPLAY` or `$WAYLAND_DISPLAY`.
+- On macOS, the user's logged-in desktop session.
+- On Windows, just run the server natively, or run it inside WSL2
+  with WSLg (bundled with Windows 10 Build 19044+ and Windows 11).
+
+Headless deployments (SSH-only hosts, containers without an X server)
+will get `no_display` back — for those, bypass the uploader and point
+`mpgo_register_file` straight at your existing file.
 
 ---
 
@@ -635,6 +668,14 @@ A good smoke test, end to end:
    and you should get `valid: true` plus a per-dataset verdict map.
    Pass a different `key_id` and `valid` flips to `false` without
    raising.
+9. If you set `MPGO_MCP_INTAKE_DIR` and the server process can reach
+   a display (local desktop, or WSLg on Windows), ask the client to
+   call `mpgo_launch_uploader`. A file picker opens on your desktop;
+   choose any importable file (`.mpgo`, `.mzml`, `.nmrml`, `.imzml`,
+   `.mztab`) and watch the progress window stream it into the intake
+   directory. The tool returns `{source, destination, format,
+   size_bytes}` — follow up with `mpgo_register_file` against the
+   `destination` to bring the staged file into the catalog.
 
 That's the full round trip. Everything else is filters, pagination,
 and edge cases.
@@ -856,6 +897,31 @@ algorithm the tool requires. Typical triggers:
 Add a key with the right algorithm tag to the keyring and use its
 `key_id` instead — keys cannot be used across algorithms.
 
+### `mpgo_launch_uploader` returns `intake_not_configured`
+
+You haven't set `MPGO_MCP_INTAKE_DIR` in the shell that launched the
+server. MCP clients don't forward env vars you export *after* the
+client starts. Kill the client, export the var, relaunch.
+
+### `mpgo_launch_uploader` returns `no_display`
+
+The host the server is running on has no display session for tkinter
+to open a window against. Typical causes:
+
+- SSH without `-X` / `-Y`.
+- A container or CI runner with no X server.
+- WSL1 (no GUI layer) — upgrade to WSL2 on Windows 10 Build 19044+
+  or Windows 11, which ship WSLg.
+
+The uploader can't run headless by design — it's a human-in-the-loop
+tool. For automation, use `mpgo_register_file` against a URI you've
+already staged by other means.
+
+### `mpgo_launch_uploader` returns `cancelled`
+
+The user closed the file-picker without picking a file. Not an
+error — just retry when they're ready.
+
 ### The client shows "mpeg-o-mcp disconnected" right after starting
 
 The server crashed during startup, probably because an env var
@@ -899,6 +965,9 @@ rm -rf ~/mpeg-o-mcp
 
 # 4. If you created a keyring outside the repo, delete it
 rm -f ~/.config/mpeg-o-mcp/keyring.json
+
+# 5. If you configured an intake dir outside the repo, delete it
+rm -rf ~/mpeg-o-intake
 ```
 
 If you used Postgres, drop the catalog database separately:
