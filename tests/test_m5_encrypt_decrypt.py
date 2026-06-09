@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, Keyring
-from mpeg_o_mcp.tools import decrypt_file as df
-from mpeg_o_mcp.tools import encrypt_file as ef
-from mpeg_o_mcp.tools.get_file import handle as handle_get_file
-from mpeg_o_mcp.tools.get_spectrum import KeyRequired
-from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
-from mpeg_o_mcp.tools.register import handle as handle_register
-from mpeg_o_mcp.tools.reverify import handle as handle_reverify
+from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, Keyring
+from ttio_mcp.tools import decrypt_file as df
+from ttio_mcp.tools import encrypt_file as ef
+from ttio_mcp.tools.get_file import handle as handle_get_file
+from ttio_mcp.tools.get_spectrum import KeyRequired
+from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
+from ttio_mcp.tools.register import handle as handle_register
+from ttio_mcp.tools.reverify import handle as handle_reverify
 from tests._fixtures import build_ms_fixture
 
 
@@ -165,7 +165,7 @@ async def test_encrypt_remote_rejected(
     # the cloud deps configured. Use the raw ORM to keep the test hermetic.
     from datetime import UTC, datetime
 
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     row = File(
         uri="s3://fake-bucket/fake.mpgo",
@@ -195,7 +195,7 @@ async def test_decrypt_remote_rejected(
     kr, key_id, _ = keyring_with_key
     from datetime import UTC, datetime
 
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     row = File(
         uri="s3://fake-bucket/fake.mpgo",
@@ -250,7 +250,7 @@ async def test_get_spectrum_with_wrong_key_fails(
         session, {"id": reg["file_id"], "key_id": "good"}, keyring=kr
     )
 
-    from mpeg_o_mcp.tools.get_spectrum import ReadFailed
+    from ttio_mcp.tools.get_spectrum import ReadFailed
 
     with pytest.raises(ReadFailed):
         await handle_get_spec(

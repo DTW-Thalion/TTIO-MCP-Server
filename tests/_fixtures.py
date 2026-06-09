@@ -2,7 +2,7 @@
 
 No vendored binaries — every fixture is built from scratch via
 :func:`mpeg_o.SpectralDataset.write_minimal` so the tests stay
-hermetic and the fixture shape tracks MPEG-O's API.
+hermetic and the fixture shape tracks TTI-O's API.
 """
 from __future__ import annotations
 

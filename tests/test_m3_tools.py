@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.catalog import NotFound
-from mpeg_o_mcp.tools.get_quantifications import handle as handle_get_quant
-from mpeg_o_mcp.tools.get_run import handle as handle_get_run
-from mpeg_o_mcp.tools.get_spectrum import InvalidArgument
-from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
-from mpeg_o_mcp.tools.register import handle as handle_register
-from mpeg_o_mcp.tools.search_identifications import handle as handle_search
+from ttio_mcp.catalog import NotFound
+from ttio_mcp.tools.get_quantifications import handle as handle_get_quant
+from ttio_mcp.tools.get_run import handle as handle_get_run
+from ttio_mcp.tools.get_spectrum import InvalidArgument
+from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
+from ttio_mcp.tools.register import handle as handle_register
+from ttio_mcp.tools.search_identifications import handle as handle_search
 from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
@@ -216,22 +216,22 @@ async def test_get_quantifications_by_uri(session, ms_file: Path) -> None:
 
 
 async def test_tools_surface_has_all_14(session) -> None:
-    from mpeg_o_mcp.tools import TOOLS
+    from ttio_mcp.tools import TOOLS
 
     names = {t[0] for t in TOOLS}
     assert names == {
-        "mpgo_register_file",
-        "mpgo_list_files",
-        "mpgo_get_file",
-        "mpgo_reverify",
-        "mpgo_search_identifications",
-        "mpgo_get_run",
-        "mpgo_get_spectrum",
-        "mpgo_get_quantifications",
-        "mpgo_encrypt_file",
-        "mpgo_decrypt_file",
-        "mpgo_push_file",
-        "mpgo_sign_file",
-        "mpgo_verify_signature",
-        "mpgo_launch_uploader",
+        "ttio_register_file",
+        "ttio_list_files",
+        "ttio_get_file",
+        "ttio_reverify",
+        "ttio_search_identifications",
+        "ttio_get_run",
+        "ttio_get_spectrum",
+        "ttio_get_quantifications",
+        "ttio_encrypt_file",
+        "ttio_decrypt_file",
+        "ttio_push_file",
+        "ttio_sign_file",
+        "ttio_verify_signature",
+        "ttio_launch_uploader",
     }

@@ -24,13 +24,13 @@ are rejected at the MCP layer before the handler runs.
   optional `as_user` string. The name must already exist in the
   `users` table — unknown names raise `unknown_user`. Absent
   `as_user` defaults to the seeded `system` user.
-- **`fsspec_kwargs`.** On `mpgo_register_file` and `mpgo_get_spectrum`,
+- **`fsspec_kwargs`.** On `ttio_register_file` and `ttio_get_spectrum`,
   a per-call `fsspec_kwargs` object is shallow-merged on top of
-  `MPGO_MCP_FSSPEC_KWARGS` (per-call keys win). Ignored for local
+  `TTIO_MCP_FSSPEC_KWARGS` (per-call keys win). Ignored for local
   files.
 - **Keyring.** Encrypt, decrypt, encrypted-spectrum reads, and sign /
   verify all resolve `key_id` through the server-side keyring
-  (`MPGO_KEYRING_PATH`). Raw key bytes never cross the MCP wire. The
+  (`TTIO_KEYRING_PATH`). Raw key bytes never cross the MCP wire. The
   keyring is algorithm-scoped: AES-256-GCM keys can only be used for
   encrypt/decrypt/push; HMAC-SHA256 keys can only be used for
   sign/verify. Cross-algorithm use raises `algorithm_mismatch`.
@@ -41,7 +41,7 @@ are rejected at the MCP layer before the handler runs.
 
 ## Catalog & registration
 
-### `mpgo_register_file`
+### `ttio_register_file`
 
 Register an `.mpgo` in the catalog. Resolves the URI, hashes the bytes,
 opens the file through `mpeg_o.SpectralDataset`, harvests metadata,
@@ -57,7 +57,7 @@ same URI updates the `files` row and replaces child rows
 | `uri` *(required)* | string | `file://`, bare path, or cloud URI. |
 | `display_name` | string | Optional friendly name. |
 | `as_user` | string | Must exist in `users`. Defaults to `system`. |
-| `fsspec_kwargs` | object | Merged onto `MPGO_MCP_FSSPEC_KWARGS` for remote URIs. |
+| `fsspec_kwargs` | object | Merged onto `TTIO_MCP_FSSPEC_KWARGS` for remote URIs. |
 
 **Success data**
 
@@ -75,7 +75,7 @@ same URI updates the `files` row and replaces child rows
 
 **Errors:** `invalid_uri`, `resolve_failed`, `not_mpgo`, `unknown_user`.
 
-### `mpgo_list_files`
+### `ttio_list_files`
 
 Paginated catalog listing with optional filters. Never touches disk.
 
@@ -99,7 +99,7 @@ Paginated catalog listing with optional filters. Never touches disk.
 }
 ```
 
-### `mpgo_get_file`
+### `ttio_get_file`
 
 Full record for one file, including studies and runs. Never touches disk.
 
@@ -110,7 +110,7 @@ and `runs[]` summaries.
 
 **Errors:** `not_found`.
 
-### `mpgo_reverify`
+### `ttio_reverify`
 
 Re-hash the referenced bytes, update `last_verified_at`, and report
 drift. **Local files only** — remote URIs raise `invalid_uri`. If the
@@ -149,7 +149,7 @@ non-raising result with `resolved: false` and an `error` string.
 
 ## Query
 
-### `mpgo_search_identifications`
+### `ttio_search_identifications`
 
 Cross-file identification search. Never touches disk. Ranked by
 `score DESC, id ASC`.
@@ -167,7 +167,7 @@ Cross-file identification search. Never touches disk. Ranked by
 
 **Success data** — `{total, limit, offset, identifications: [{id, file_id, file_uri, run_id, run_name, acquisition_mode, chebi_id, name, score, spectrum_index, evidence_chain}]}`.
 
-### `mpgo_get_run`
+### `ttio_get_run`
 
 Per-run detail with inline identifications and quantifications scoped
 to this run (`sample_ref == run.name` or NULL).
@@ -180,7 +180,7 @@ when the run metadata carries them.
 
 **Errors:** `not_found`.
 
-### `mpgo_get_spectrum`
+### `ttio_get_spectrum`
 
 The only query tool that reopens the underlying `.mpgo`. Channels
 past `max_points` are stride-downsampled and flagged with
@@ -217,7 +217,7 @@ past `max_points` are stride-downsampled and flagged with
 `key_required` (encrypted file, no key), `key_not_found`,
 `keyring_not_configured`, `invalid_keyring`.
 
-### `mpgo_get_quantifications`
+### `ttio_get_quantifications`
 
 Per-file quantification listing with filters. Never touches disk.
 
@@ -236,9 +236,9 @@ normalization_method}]}`.
 
 Both tools are **local-only** — cloud URIs are rejected with
 `remote_not_supported`. Both require a configured keyring via
-`MPGO_KEYRING_PATH`; see [configuration.md](configuration.md#keyring).
+`TTIO_KEYRING_PATH`; see [configuration.md](configuration.md#keyring).
 
-### `mpgo_encrypt_file`
+### `ttio_encrypt_file`
 
 In-place AES-256-GCM intensity encryption via
 `mpeg_o.SpectralDataset.encrypt_with_key`. Rehashes the file, flips
@@ -274,9 +274,9 @@ In-place AES-256-GCM intensity encryption via
 `encrypt_failed`, `keyring_not_configured`, `key_not_found`,
 `invalid_keyring`, `unknown_user`.
 
-### `mpgo_decrypt_file`
+### `ttio_decrypt_file`
 
-Persist plaintext back to disk via MPEG-O v1.1.1
+Persist plaintext back to disk via TTI-O v1.1.1
 `SpectralDataset.decrypt_in_place`. Mirrors the encrypt bookkeeping:
 clears `encrypted_algorithm`, rehashes.
 
@@ -307,7 +307,7 @@ clears `encrypted_algorithm`, rehashes.
 
 ## Cloud push (M6)
 
-### `mpgo_push_file`
+### `ttio_push_file`
 
 Upload a local `.mpgo` to a writable cloud URI and register the uploaded
 object in the catalog in one call. Optionally encrypts the bytes with
@@ -315,7 +315,7 @@ AES-256-GCM in-flight so plaintext never touches the bucket.
 
 **What it does NOT do:** post-hoc encrypt an object that already lives
 in the cloud. For that flow, pull down with your cloud client, run
-`mpgo_encrypt_file` locally, then push the ciphertext with this tool.
+`ttio_encrypt_file` locally, then push the ciphertext with this tool.
 
 **Input**
 
@@ -326,7 +326,7 @@ in the cloud. For that flow, pull down with your cloud client, run
 | `key_id` | string | When set, a throwaway temp copy is encrypted before upload. The ciphertext is what lands at `remote_uri`. |
 | `level` | enum | `DATASET_GROUP` (default), `DATASET`, `DESCRIPTOR_STREAM`, `ACCESS_UNIT`. Only consulted when `key_id` is set. |
 | `as_user` | string | Ownership for the new catalog row. |
-| `fsspec_kwargs` | object | Shallow-merged on top of `MPGO_MCP_FSSPEC_KWARGS`. Forwarded to both the upload write and the post-upload register. |
+| `fsspec_kwargs` | object | Shallow-merged on top of `TTIO_MCP_FSSPEC_KWARGS`. Forwarded to both the upload write and the post-upload register. |
 
 **Success data**
 
@@ -349,9 +349,9 @@ in the cloud. For that flow, pull down with your cloud client, run
 `invalid_keyring`, `not_mpgo`, `unknown_user`.
 
 The catalog row for `remote_uri` is created (or updated, when
-re-pushing to the same key) through the normal `mpgo_register_file`
-path, so all subsequent query tools (`mpgo_get_file`,
-`mpgo_search_identifications`, `mpgo_get_spectrum`, ...) see the
+re-pushing to the same key) through the normal `ttio_register_file`
+path, so all subsequent query tools (`ttio_get_file`,
+`ttio_search_identifications`, `ttio_get_spectrum`, ...) see the
 uploaded object exactly as if it had been registered manually.
 
 ---
@@ -363,20 +363,20 @@ Both tools are **local-only** — cloud URIs are rejected with
 canonical v2 byte layout inside each `signal_channels/*_values`
 dataset, which requires plaintext values; encrypted files are rejected
 with `already_encrypted`. The manual workflow for a remote file is the
-same as with encryption: pull down, sign locally, `mpgo_push_file` the
+same as with encryption: pull down, sign locally, `ttio_push_file` the
 signed plaintext. (Sign-then-encrypt and encrypt-then-sign are both
 unsupported — decrypt first, then sign, then encrypt for the cloud as
 a separate step.)
 
-Both tools require a configured keyring (`MPGO_KEYRING_PATH`) holding
+Both tools require a configured keyring (`TTIO_KEYRING_PATH`) holding
 an `hmac-sha256` entry. See [configuration.md](configuration.md#keyring).
 
-### `mpgo_sign_file`
+### `ttio_sign_file`
 
 Walk every `signal_channels/*_values` dataset under a run and sign it
 via `mpeg_o.signatures.sign_dataset(dataset, key, algorithm="hmac-sha256")`.
-The MPEG-O library emits a `v2:<base64>` HMAC-SHA256 tag into each
-dataset's `@mpgo_signature` VL-string attribute. Re-signing overwrites
+The TTI-O library emits a `v2:<base64>` HMAC-SHA256 tag into each
+dataset's `@ttio_signature` VL-string attribute. Re-signing overwrites
 any prior attribute — the operation is idempotent at the file level
 for a given key. Covers both MS runs (`study/*/ms_runs/<run>/...`) and
 NMR runs (`study/*/nmr_runs/<run>/...`) identically.
@@ -420,15 +420,15 @@ row is refreshed: `signed=True`, `signature_algorithm="hmac-sha256"`,
 `nothing_to_sign`, `sign_failed`, `keyring_not_configured`,
 `key_not_found`, `algorithm_mismatch`, `invalid_keyring`, `unknown_user`.
 
-### `mpgo_verify_signature`
+### `ttio_verify_signature`
 
 Open the file read-only and verify every dataset that carries an
-`@mpgo_signature` attribute via `mpeg_o.signatures.verify_dataset`.
+`@ttio_signature` attribute via `mpeg_o.signatures.verify_dataset`.
 Returns a `{hdf5_path: bool}` verdict map plus an aggregate `valid`
 flag that is true iff **every** signed dataset verified under the
 supplied key.
 
-An unsigned file (no datasets with `@mpgo_signature`) raises
+An unsigned file (no datasets with `@ttio_signature`) raises
 `not_signed` so callers cannot mistake "nothing to check" for
 "verified successfully".
 
@@ -469,18 +469,18 @@ pass. Reserve `verify_failed` for actual I/O / HDF5 errors.
 `key_not_found`, `algorithm_mismatch`, `invalid_keyring`.
 
 > **Re-signing.** There is no atomic rotate. To switch signing keys,
-> call `mpgo_sign_file` again with the new `key_id` — the old
-> `@mpgo_signature` attributes are overwritten. Rehashes happen
+> call `ttio_sign_file` again with the new `key_id` — the old
+> `@ttio_signature` attributes are overwritten. Rehashes happen
 > automatically.
 
 ---
 
 ## Local intake
 
-### `mpgo_launch_uploader`
+### `ttio_launch_uploader`
 
 Spawn a local tkinter file-picker on the same machine as the server
-and copy the user's chosen file into `MPGO_MCP_INTAKE_DIR`. Useful
+and copy the user's chosen file into `TTIO_MCP_INTAKE_DIR`. Useful
 when a human wants to stage a binary file (mzML / nmrML / imzML /
 mzTab / `.mpgo`) without pasting bytes through the chat or
 prearranging a URI.
@@ -496,7 +496,7 @@ directory in 1 MiB chunks. The progress bar is driven from a worker
 thread so the UI stays responsive on large files; partial destination
 files are cleaned up if the copy raises mid-stream.
 
-This tool **does not** write catalog rows. Call `mpgo_register_file`
+This tool **does not** write catalog rows. Call `ttio_register_file`
 against the returned `destination` to bring the file into the catalog.
 
 **Input**
@@ -551,15 +551,15 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 | `already_encrypted` | `encrypt_file` | Catalog marks file encrypted. |
 | `not_encrypted` | `decrypt_file` | Catalog marks file plaintext. |
 | `remote_not_supported` | `encrypt_file` / `decrypt_file` | Cloud URI rejected. |
-| `encrypt_failed` | `encrypt_file` / `push_file` | MPEG-O-side exception during encrypt. |
-| `decrypt_failed` | `decrypt_file` | MPEG-O-side exception during decrypt. |
+| `encrypt_failed` | `encrypt_file` / `push_file` | TTI-O-side exception during encrypt. |
+| `decrypt_failed` | `decrypt_file` | TTI-O-side exception during decrypt. |
 | `scheme_not_writable` | `push_file` | `remote_uri` scheme is not a writable cloud scheme. |
 | `upload_failed` | `push_file` | fsspec write to the remote URI raised. |
-| `sign_failed` | `sign_file` | MPEG-O / h5py raised while walking or signing datasets. |
-| `verify_failed` | `verify_signature` | MPEG-O / h5py raised while walking or verifying datasets. |
+| `sign_failed` | `sign_file` | TTI-O / h5py raised while walking or signing datasets. |
+| `verify_failed` | `verify_signature` | TTI-O / h5py raised while walking or verifying datasets. |
 | `nothing_to_sign` | `sign_file` | No `signal_channels/*_values` datasets found to sign. |
-| `not_signed` | `verify_signature` | File has no datasets with an `@mpgo_signature` attribute. |
-| `intake_not_configured` | `launch_uploader` | `MPGO_MCP_INTAKE_DIR` unset on the server process. |
+| `not_signed` | `verify_signature` | File has no datasets with an `@ttio_signature` attribute. |
+| `intake_not_configured` | `launch_uploader` | `TTIO_MCP_INTAKE_DIR` unset on the server process. |
 | `cancelled` | `launch_uploader` | User closed the file picker without choosing a file. |
 | `no_display` | `launch_uploader` | tkinter couldn't open a window (no `$DISPLAY`, headless host). |
 | `timeout` | `launch_uploader` | User didn't pick a file within `timeout_seconds`. |
@@ -568,10 +568,10 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 
 | Code | Meaning |
 |---|---|
-| `keyring_not_configured` | `MPGO_KEYRING_PATH` unset. |
+| `keyring_not_configured` | `TTIO_KEYRING_PATH` unset. |
 | `key_not_found` | `key_id` absent from the keyring. |
 | `invalid_keyring` | Malformed JSON, wrong algorithm, wrong length, bad base64. |
-| `algorithm_mismatch` | Key's stored `algorithm` doesn't match the tool's requirement (e.g. HMAC key passed to `mpgo_encrypt_file`). |
+| `algorithm_mismatch` | Key's stored `algorithm` doesn't match the tool's requirement (e.g. HMAC key passed to `ttio_encrypt_file`). |
 
 ### Server
 

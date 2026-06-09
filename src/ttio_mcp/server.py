@@ -1,7 +1,7 @@
-"""MCP server entry point for ``mpeg-o-mcp``.
+"""MCP server entry point for ``ttio-mcp``.
 
 M2 wires in the four catalog tools (register / list / get / reverify).
-The database URL comes from :class:`mpeg_o_mcp.config.Config` and the
+The database URL comes from :class:`ttio_mcp.config.Config` and the
 schema is expected to be migrated via ``alembic upgrade head`` before
 first run.
 """
@@ -12,16 +12,16 @@ import asyncio
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from mpeg_o_mcp import __version__
-from mpeg_o_mcp.config import Config
-from mpeg_o_mcp.db.session import make_engine, make_session_factory
-from mpeg_o_mcp.keyring import Keyring
-from mpeg_o_mcp.tools import register as register_tools
+from ttio_mcp import __version__
+from ttio_mcp.config import Config
+from ttio_mcp.db.session import make_engine, make_session_factory
+from ttio_mcp.keyring import Keyring
+from ttio_mcp.tools import register as register_tools
 
 
 def build_server(config: Config | None = None) -> tuple[Server, Config]:
     cfg = config or Config.from_env()
-    server = Server(name="mpeg-o-mcp", version=__version__)
+    server = Server(name="ttio-mcp", version=__version__)
     engine = make_engine(cfg.db_url)
     session_factory = make_session_factory(engine)
     keyring = Keyring.from_path(cfg.keyring_path)

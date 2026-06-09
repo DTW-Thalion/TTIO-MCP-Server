@@ -4,7 +4,7 @@ Two widgets live here:
 
 - :func:`pick_file` — modal open-file dialog.
 - :func:`copy_to_intake_with_progress` — determinate progress window
-  that drives :func:`mpeg_o_mcp.uploader.core.copy_to_intake` from a
+  that drives :func:`ttio_mcp.uploader.core.copy_to_intake` from a
   worker thread.
 
 Both lazily import tkinter so the rest of the uploader (pure-logic
@@ -18,10 +18,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from mpeg_o_mcp.uploader.core import IMPORTABLE_EXTENSIONS, copy_to_intake
+from ttio_mcp.uploader.core import IMPORTABLE_EXTENSIONS, copy_to_intake
 
 
-def pick_file(title: str = "Choose a file to upload to MPEG-O") -> Path | None:
+def pick_file(title: str = "Choose a file to upload to TTI-O") -> Path | None:
     """Show a modal file-picker; return the chosen path or ``None``.
 
     ``None`` means the user cancelled. Raises ``RuntimeError`` wrapping
@@ -42,7 +42,7 @@ def pick_file(title: str = "Choose a file to upload to MPEG-O") -> Path | None:
     root.withdraw()
     try:
         filetypes = [
-            ("MPEG-O importable", " ".join(f"*{ext}" for ext in IMPORTABLE_EXTENSIONS)),
+            ("TTI-O importable", " ".join(f"*{ext}" for ext in IMPORTABLE_EXTENSIONS)),
             *[(fmt.upper(), f"*{ext}") for ext, fmt in IMPORTABLE_EXTENSIONS.items()],
             ("All files", "*.*"),
         ]
@@ -87,7 +87,7 @@ def copy_to_intake_with_progress(
     except TclError as exc:
         raise RuntimeError(f"no display available for tkinter: {exc}") from exc
 
-    root.title("MPEG-O uploader")
+    root.title("TTI-O uploader")
     root.resizable(False, False)
 
     tk.Label(

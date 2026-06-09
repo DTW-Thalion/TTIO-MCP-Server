@@ -1,18 +1,18 @@
-# HANDOFF.md — MPEG-O-MCP M1: Foundation & Schema
+# HANDOFF.md — TTI-O-MCP M1: Foundation & Schema
 
 ## Context
 
-Bootstrap `MPEG-O-MCP`, an MCP server that exposes `.mpgo` file capabilities
+Bootstrap `TTI-O-MCP`, an MCP server that exposes `.mpgo` file capabilities
 to LLM clients via the catalog pattern (SQL index over files that stay in
 place). This is milestone 1 of 5; scope is scaffolding only — no tool
 logic. The deliverable is a repo that migrates its schema, launches, and
 survives an MCP `initialize` handshake.
 
-Main MPEG-O repo: `github.com/DTW-Thalion/MPEG-O`, currently at tag
+Main TTI-O repo: `github.com/DTW-Thalion/TTI-O`, currently at tag
 `v1.0.0` (first stable release, 2026-04-23). Python package name
 `mpeg-o` (imports as `mpeg_o`) — **not yet published to PyPI or
 TestPyPI**; M1 installs the dependency directly from the git tag.
-Publishing is tracked as MPEG-O M40, planned for v1.0.1.
+Publishing is tracked as TTI-O M40, planned for v1.0.1.
 
 ## Binding Decisions
 
@@ -29,8 +29,8 @@ Publishing is tracked as MPEG-O M40, planned for v1.0.1.
 7. **Auth forward-compat:** `users` table created now (empty except a seeded
    `system` user). `registered_by` / `owner_user_id` FKs on `files`. All
    MCP tools will accept an optional `as_user` argument (no-op in v0.1).
-8. **Secrets:** env-based only (`MPGO_KEYRING_PATH`, AWS env vars,
-   `MPGO_FSSPEC_CONFIG_PATH`). Never in MCP tool args. (M4 work; mentioned
+8. **Secrets:** env-based only (`TTIO_KEYRING_PATH`, AWS env vars,
+   `TTIO_FSSPEC_CONFIG_PATH`). Never in MCP tool args. (M4 work; mentioned
    so you don't design them out.)
 9. **Tool granularity (M2/M3):** one tool per concept with rich schema; no
    tool sprawl.
@@ -44,7 +44,7 @@ verify (a) the schema migrates and seeds, (b) the server handshakes.
 ## Repository Layout
 
 ```
-MPEG-O-MCP/
+TTI-O-MCP/
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE                       # Apache-2.0 full text
@@ -54,7 +54,7 @@ MPEG-O-MCP/
 │   ├── env.py
 │   ├── script.py.mako
 │   └── versions/<rev>_initial_schema.py
-├── src/mpeg_o_mcp/
+├── src/ttio_mcp/
 │   ├── __init__.py               # __version__ = "0.1.0.dev0"
 │   ├── server.py                 # MCP server + main() entry point
 │   ├── config.py                 # env var loading, defaults
@@ -73,19 +73,19 @@ MPEG-O-MCP/
 ## pyproject.toml
 
 - Build backend: hatchling.
-- Name `mpeg-o-mcp`, import `mpeg_o_mcp`, Python `>=3.11`.
+- Name `ttio-mcp`, import `ttio_mcp`, Python `>=3.11`.
 - Runtime deps: `mcp>=1.0`, `sqlalchemy>=2.0`, `alembic>=1.13`, plus
   `mpeg-o` pulled directly from the v1.0.0 git tag via a PEP 508
   direct-URL reference:
   ```
-  mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.0.0#subdirectory=python
+  mpeg-o @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.0.0#subdirectory=python
   ```
-  When MPEG-O M40 lands on PyPI (v1.0.1 target), swap this to
+  When TTI-O M40 lands on PyPI (v1.0.1 target), swap this to
   `mpeg-o>=1.0,<2.0`.
 - Extras:
   - `dev`: pytest, pytest-asyncio, ruff, mypy
   - `cloud`: s3fs, fsspec (pass-through; actual use in M4)
-- Console script: `mpeg-o-mcp = mpeg_o_mcp.server:main`.
+- Console script: `ttio-mcp = ttio_mcp.server:main`.
 - SPDX `Apache-2.0`.
 - pytest config: `asyncio_mode = "auto"`.
 
@@ -137,13 +137,13 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
 ## Alembic
 
 - `alembic init migrations`; edit `migrations/env.py` to import
-  `mpeg_o_mcp.db.models.Base` and set `target_metadata = Base.metadata`.
+  `ttio_mcp.db.models.Base` and set `target_metadata = Base.metadata`.
 - Generate: `alembic revision --autogenerate -m "initial schema"`.
 - Hand-edit the generated file to append a data migration inside
   `upgrade()` that inserts the seed `system` user via `op.bulk_insert`.
   Mirror the deletion in `downgrade()`.
-- Default DB URL: `sqlite:///mpeg_o_mcp.db` in cwd. Override via
-  `MPGO_MCP_DB_URL`. `env.py` must read that env var if set.
+- Default DB URL: `sqlite:///ttio_mcp.db` in cwd. Override via
+  `TTIO_MCP_DB_URL`. `env.py` must read that env var if set.
 
 ## MCP Server Skeleton (`server.py`)
 
@@ -151,7 +151,7 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
   `python -c "import mcp, pkgutil; print(mcp.__version__); print([m.name for m in pkgutil.iter_modules(mcp.__path__)])"`
   and read the installed examples to confirm current API shape. Do not
   guess module paths from memory.
-- Server name `mpeg-o-mcp`, version from `mpeg_o_mcp.__version__`.
+- Server name `ttio-mcp`, version from `ttio_mcp.__version__`.
 - Register **zero tools** in M1.
 - `async def serve()` runs the stdio transport; `def main()` is a thin
   `asyncio.run(serve())` wrapper bound to the console script.
@@ -172,10 +172,10 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
   present. Then `alembic downgrade base` and assert tables are gone.
 
 **`test_initialize.py`**
-- Spawn `mpeg-o-mcp` as a subprocess.
+- Spawn `ttio-mcp` as a subprocess.
 - Use the `mcp` SDK's stdio client to send `initialize`.
 - Assert response has `protocolVersion`, `capabilities`, and
-  `serverInfo.name == "mpeg-o-mcp"`.
+  `serverInfo.name == "ttio-mcp"`.
 - Close cleanly; assert exit code 0.
 
 ## GitHub Actions (`.github/workflows/ci.yml`)
@@ -188,18 +188,18 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
   3. `pip install -e ".[dev]"` (no extra-index-url — `mpeg-o` resolves
      from its git tag per the direct-URL dependency in `pyproject.toml`).
   4. `ruff check .`
-  5. `alembic upgrade head` (env `MPGO_MCP_DB_URL=sqlite:///./ci.db`).
+  5. `alembic upgrade head` (env `TTIO_MCP_DB_URL=sqlite:///./ci.db`).
   6. `pytest -q`.
 
 ## Acceptance Checklist
 
 - [ ] Fresh clone → `pip install -e ".[dev]"` succeeds (pulls
-      `mpeg-o` from the MPEG-O v1.0.0 git tag; no extra-index-url
+      `mpeg-o` from the TTI-O v1.0.0 git tag; no extra-index-url
       required).
 - [ ] `alembic upgrade head` creates all six tables and seeds the
       `system` user.
 - [ ] `alembic downgrade base` cleanly drops everything.
-- [ ] `mpeg-o-mcp` launches, handshakes `initialize`, exits cleanly on
+- [ ] `ttio-mcp` launches, handshakes `initialize`, exits cleanly on
       EOF.
 - [ ] `pytest -q` green locally and in CI on both Python 3.11 and 3.12.
 - [ ] `ruff check .` clean.
@@ -213,12 +213,12 @@ cascade), `chebi_id` (indexed, nullable), `name` (nullable), `score`
 Do **not** implement any of the following — each belongs to a later
 milestone. If you find yourself writing one, stop and flag:
 
-- `mpgo_*` tool handlers of any kind (M2/M3).
+- `ttio_*` tool handlers of any kind (M2/M3).
 - Checksum computation helpers (M2).
 - Keyring loading, fsspec config, encryption, cloud I/O (M4).
 - MCP conformance suite beyond the `initialize` smoke test (M5).
 - TestPyPI publish workflow (M5).
-- Fetching MPEG-O fixture files (M2 will add them).
+- Fetching TTI-O fixture files (M2 will add them).
 
 ## Workflow
 

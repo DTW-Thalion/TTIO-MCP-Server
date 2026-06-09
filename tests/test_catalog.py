@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     InvalidURI,
     NotFound,
     ResolveFailed,
@@ -13,7 +13,7 @@ from mpeg_o_mcp.catalog import (
     register_file,
     resolve_local_path,
 )
-from mpeg_o_mcp.db.models import (
+from ttio_mcp.db.models import (
     File,
     Identification,
     ProvenanceRecord,
@@ -21,7 +21,7 @@ from mpeg_o_mcp.db.models import (
     Run,
     Study,
 )
-from mpeg_o_mcp.hashes import hash_file_sha256
+from ttio_mcp.hashes import hash_file_sha256
 from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
@@ -127,7 +127,7 @@ def test_register_is_idempotent(session, ms_file: Path) -> None:
 def test_register_not_mpgo(session, tmp_path: Path) -> None:
     bogus = tmp_path / "bogus.mpgo"
     bogus.write_bytes(b"not an hdf5 file")
-    from mpeg_o_mcp.catalog import NotMpeg
+    from ttio_mcp.catalog import NotMpeg
 
     with pytest.raises(NotMpeg):
         register_file(session, str(bogus))
@@ -135,7 +135,7 @@ def test_register_not_mpgo(session, tmp_path: Path) -> None:
 
 def test_lookup_by_uri_and_id(session, ms_file: Path) -> None:
     result = register_file(session, str(ms_file))
-    from mpeg_o_mcp.tools._helpers import lookup_file
+    from ttio_mcp.tools._helpers import lookup_file
 
     by_id = lookup_file(session, id_or_uri={"id": result.file_id})
     by_uri = lookup_file(session, id_or_uri={"uri": str(ms_file)})

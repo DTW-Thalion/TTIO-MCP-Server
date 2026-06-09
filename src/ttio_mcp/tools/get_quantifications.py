@@ -6,8 +6,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.db.models import Quantification
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.db.models import Quantification
+from ttio_mcp.tools._helpers import lookup_file
 
 SCHEMA: dict[str, Any] = {
     "type": "object",

@@ -1,4 +1,4 @@
-# HANDOFF-M5.md — MPEG-O-MCP M5: Keyring + Encryption + as_user
+# HANDOFF-M5.md — TTI-O-MCP M5: Keyring + Encryption + as_user
 
 ## Context
 
@@ -6,7 +6,7 @@ M2 shipped the catalog; M3 added query tools; M4 made the whole surface
 cloud-capable. M5 is the first milestone with real secrets: the server
 gains a keyring, two new encryption tools, and `as_user` stops
 auto-creating unknown principals. The encryption tools delegate the
-actual cryptography to the MPEG-O standard library — our job is the
+actual cryptography to the TTI-O standard library — our job is the
 plumbing and the catalog bookkeeping.
 
 - M1 HANDOFF: [HANDOFF.md](HANDOFF.md) — binding decisions.
@@ -16,23 +16,23 @@ plumbing and the catalog bookkeeping.
 
 ## M5 Scope
 
-- **Server-side keyring.** `mpeg_o_mcp.keyring` loads a JSON file at
-  `MPGO_KEYRING_PATH`. Raw key bytes are resolved server-side via
+- **Server-side keyring.** `ttio_mcp.keyring` loads a JSON file at
+  `TTIO_KEYRING_PATH`. Raw key bytes are resolved server-side via
   `key_id`; they never cross the MCP wire. Validation catches
   malformed base64, wrong algorithm, wrong length, and missing file
   entries. Missing file is treated as an empty keyring.
-- **`mpgo_encrypt_file` tool.** Opens a local `.mpgo` with
+- **`ttio_encrypt_file` tool.** Opens a local `.mpgo` with
   `SpectralDataset.open(path, writable=True)` and calls
   `encrypt_with_key(key, level)`. Re-hashes the on-disk bytes,
   flips `files.encrypted`, stamps `files.encrypted_algorithm`
   (`AES-256-GCM`), and refreshes `last_verified_at`. Rejects already
   encrypted files (`already_encrypted`) and remote URIs
   (`remote_not_supported`).
-- **`mpgo_decrypt_file` tool.** Delegates to MPEG-O v1.1.1
+- **`ttio_decrypt_file` tool.** Delegates to TTI-O v1.1.1
   `SpectralDataset.decrypt_in_place(path, key)`. Mirrors encrypt on
   the catalog side: clears `encrypted_algorithm`, rehashes. Rejects
   plaintext files (`not_encrypted`) and remote URIs.
-- **`mpgo_get_spectrum` gains `key_id`.** Encrypted files without a
+- **`ttio_get_spectrum` gains `key_id`.** Encrypted files without a
   key raise `key_required`. With a key, the tool rehydrates
   plaintext in memory (`decrypt_with_key`) before reading; the disk
   bytes are not touched.
@@ -42,7 +42,7 @@ plumbing and the catalog bookkeeping.
 - **`as_user` hardened.** Unknown names raise the new `unknown_user`
   error instead of auto-creating a row. Seeded `system` user
   remains the default when `as_user` is absent.
-- **MPEG-O pin bumped to v1.1.1** for `decrypt_in_place`.
+- **TTI-O pin bumped to v1.1.1** for `decrypt_in_place`.
 
 ## Out of Scope for M5
 
@@ -54,7 +54,7 @@ plumbing and the catalog bookkeeping.
   HashiCorp Vault) is deferred — the `key_id` indirection is already
   shaped to host it later.
 - **Signed bundles.** `files.signed` stays unused through M5; the
-  MPEG-O signature API will land next to the KMS work.
+  TTI-O signature API will land next to the KMS work.
 - **Encrypt/decrypt on cloud URIs.** Encrypt and decrypt both
   hard-reject `s3://` et al. with `remote_not_supported`. Supporting
   them requires download + re-upload semantics and a cloud credential
@@ -66,16 +66,16 @@ plumbing and the catalog bookkeeping.
 ## Package Layout (new/changed in M5)
 
 ```
-src/mpeg_o_mcp/
+src/ttio_mcp/
 ├── keyring.py                 # NEW — JSON-file-backed keyring
-├── config.py                  # UPDATED — keyring_path from MPGO_KEYRING_PATH
+├── config.py                  # UPDATED — keyring_path from TTIO_KEYRING_PATH
 ├── server.py                  # UPDATED — builds Keyring, passes to register()
 ├── catalog.py                 # UPDATED — UnknownUser + no auto-create
 └── tools/
     ├── __init__.py            # UPDATED — dispatches keyring kwarg via inspect
     ├── _helpers.py            # UPDATED — file_to_dict exposes encrypted_algorithm
-    ├── encrypt_file.py        # NEW — mpgo_encrypt_file
-    ├── decrypt_file.py        # NEW — mpgo_decrypt_file
+    ├── encrypt_file.py        # NEW — ttio_encrypt_file
+    ├── decrypt_file.py        # NEW — ttio_decrypt_file
     ├── get_spectrum.py        # UPDATED — key_id + KeyRequired
     └── register.py            # UPDATED — stale as_user description
 
@@ -95,9 +95,9 @@ tests/
 ## Config
 
 ```
-MPGO_MCP_DB_URL          (unchanged)
-MPGO_MCP_FSSPEC_KWARGS   (unchanged)
-MPGO_KEYRING_PATH        Filesystem path to JSON keyring. Empty/unset
+TTIO_MCP_DB_URL          (unchanged)
+TTIO_MCP_FSSPEC_KWARGS   (unchanged)
+TTIO_KEYRING_PATH        Filesystem path to JSON keyring. Empty/unset
                          means no keyring configured — encrypt/decrypt/
                          encrypted-read fail with keyring_not_configured.
 ```
@@ -122,7 +122,7 @@ exposed. Missing file = empty keyring (no error until lookup).
 
 ## Tool Contract Deltas
 
-### `mpgo_encrypt_file` — new
+### `ttio_encrypt_file` — new
 
 ```json
 {
@@ -137,7 +137,7 @@ exposed. Missing file = empty keyring (no error until lookup).
 Returns: `{file_id, uri, encrypted: true, encrypted_algorithm: "AES-256-GCM",
 level, key_id, file_sha256, content_sha256}`.
 
-### `mpgo_decrypt_file` — new
+### `ttio_decrypt_file` — new
 
 ```json
 {
@@ -151,21 +151,21 @@ level, key_id, file_sha256, content_sha256}`.
 Returns: `{file_id, uri, encrypted: false, encrypted_algorithm: null,
 key_id, file_sha256, content_sha256}`.
 
-### `mpgo_get_spectrum` — adds `key_id`
+### `ttio_get_spectrum` — adds `key_id`
 
 Encrypted files raise `key_required` without it; with it, plaintext
 is rehydrated in memory only.
 
 ### Error codes (additions)
 
-- `keyring_not_configured` — no `MPGO_KEYRING_PATH`.
+- `keyring_not_configured` — no `TTIO_KEYRING_PATH`.
 - `key_not_found` — id not in the keyring.
 - `invalid_keyring` — malformed JSON, base64, algorithm, or key length.
 - `already_encrypted` — encrypt on an already-encrypted row.
 - `not_encrypted` — decrypt on a plaintext row.
 - `remote_not_supported` — encrypt/decrypt on a cloud URI.
-- `key_required` — encrypted `mpgo_get_spectrum` without `key_id`.
-- `encrypt_failed` / `decrypt_failed` — catch-all for MPEG-O-side errors.
+- `key_required` — encrypted `ttio_get_spectrum` without `key_id`.
+- `encrypt_failed` / `decrypt_failed` — catch-all for TTI-O-side errors.
 - `unknown_user` — `as_user` not in the users table.
 
 ## Acceptance Checklist
@@ -173,7 +173,7 @@ is rehydrated in memory only.
 - [x] Keyring file-format errors all surface as `invalid_keyring`.
 - [x] Encrypt → reverify → decrypt round-trip keeps catalog hashes
       consistent at every step.
-- [x] `mpgo_get_spectrum` on an encrypted file requires `key_id`;
+- [x] `ttio_get_spectrum` on an encrypted file requires `key_id`;
       wrong key raises `read_failed`.
 - [x] Remote URIs rejected on both encrypt and decrypt.
 - [x] `as_user` unknown raises `unknown_user` with no side-effect
@@ -183,7 +183,7 @@ is rehydrated in memory only.
 - [x] Full test suite green: 68 passed (43 from M2–M4 + 25 new M5).
 - [ ] `ruff check .` clean.
 - [x] CHANGELOG entry under `[0.5.0.dev0]`. Version bump in
-      `pyproject.toml` + `src/mpeg_o_mcp/__init__.py`.
+      `pyproject.toml` + `src/ttio_mcp/__init__.py`.
 
 ## Workflow
 

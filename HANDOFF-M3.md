@@ -1,4 +1,4 @@
-# HANDOFF-M3.md — MPEG-O-MCP M3: Querying, Spectra & Quantifications
+# HANDOFF-M3.md — TTI-O-MCP M3: Querying, Spectra & Quantifications
 
 ## Context
 
@@ -24,21 +24,21 @@ quantifications.
   and replaces quantifications atomically alongside the other child
   tables.
 - **Four MCP query tools**:
-  1. `mpgo_search_identifications(chebi_id?, name_contains?, min_score?, acquisition_mode?, file_id?, limit?, offset?)`
+  1. `ttio_search_identifications(chebi_id?, name_contains?, min_score?, acquisition_mode?, file_id?, limit?, offset?)`
      — cross-file, paginated. Joins `identifications → runs → files`
      so results include the file URI + run name without a second
      round-trip.
-  2. `mpgo_get_run(run_id | (file_id, run_name))` — per-run detail:
+  2. `ttio_get_run(run_id | (file_id, run_name))` — per-run detail:
      run record + its identifications + quantifications (filtered to
      rows whose `sample_ref` matches the run name, if any; otherwise
      file-level).
-  3. `mpgo_get_spectrum(run_id | (file_id, run_name), spectrum_index, max_points?)`
+  3. `ttio_get_spectrum(run_id | (file_id, run_name), spectrum_index, max_points?)`
      — **the only tool that reads from disk outside of registration.**
      Re-opens the `.mpgo` via the stored URI, reads exactly one
      spectrum, returns channels + per-spectrum metadata. Truncates
      arrays past `max_points` (default 1000, cap 100000) via stride
      downsampling.
-  4. `mpgo_get_quantifications(file_id | uri, chebi_id?, sample_ref?, min_abundance?, limit?, offset?)`
+  4. `ttio_get_quantifications(file_id | uri, chebi_id?, sample_ref?, min_abundance?, limit?, offset?)`
      — paginated, per-file.
 
 - **Local URIs only** still. No cloud, no encryption — M4.
@@ -62,7 +62,7 @@ quantifications.
 ## Package Layout (new/changed in M3)
 
 ```
-src/mpeg_o_mcp/
+src/ttio_mcp/
 ├── db/
 │   └── models.py              # UPDATED — Quantification model + File.quantifications rel
 ├── catalog.py                 # UPDATED — _extract + register_file populate quantifications
@@ -114,7 +114,7 @@ set, plus:
   exists / can't be parsed. (Distinct from `resolve_failed` because
   the file was in the catalog at some point.)
 
-### `mpgo_search_identifications`
+### `ttio_search_identifications`
 
 ```json
 {
@@ -158,7 +158,7 @@ Response `data`:
 
 Sort: `score DESC, id ASC` (stable, reproducible pagination).
 
-### `mpgo_get_run`
+### `ttio_get_run`
 
 ```json
 {
@@ -195,9 +195,9 @@ Response `data`:
 
 `quantifications` in the run payload = rows where `sample_ref ==
 run.name` OR `sample_ref IS NULL` (file-level). This is a convenience
-projection; full per-file listing stays on `mpgo_get_quantifications`.
+projection; full per-file listing stays on `ttio_get_quantifications`.
 
-### `mpgo_get_spectrum`
+### `ttio_get_spectrum`
 
 ```json
 {
@@ -250,7 +250,7 @@ Response `data`:
 }
 ```
 
-### `mpgo_get_quantifications`
+### `ttio_get_quantifications`
 
 ```json
 {
@@ -279,13 +279,13 @@ Response `data`:
       least one test per new tool, plus a catalog-level test that
       quantifications round-trip and are replaced on re-register.
 - [ ] `ruff check .` clean.
-- [ ] Server still launches: `python -m mpeg_o_mcp.server` handshakes
+- [ ] Server still launches: `python -m ttio_mcp.server` handshakes
       and lists 8 tools (4 M2 + 4 M3).
-- [ ] `mpgo_get_spectrum` correctly downsamples a run whose spectrum
+- [ ] `ttio_get_spectrum` correctly downsamples a run whose spectrum
       length exceeds `max_points` (test builds a fixture with
       `n_points > max_points`).
 - [ ] CHANGELOG entry under `[0.3.0.dev0]`.
-- [ ] Version bump in `pyproject.toml` and `src/mpeg_o_mcp/__init__.py`
+- [ ] Version bump in `pyproject.toml` and `src/ttio_mcp/__init__.py`
       to `0.3.0.dev0`.
 
 ## Workflow
@@ -293,5 +293,5 @@ Response `data`:
 - Direct commits to `main`, `[M3] ...` prefix, one logical change each.
 - Build + commit in WSL.
 - Push via Windows git:
-  `/c/Program\ Files/Git/bin/git.exe -C //wsl.localhost/Ubuntu/home/toddw/MPEG-O-MCP-Server push origin main`.
+  `/c/Program\ Files/Git/bin/git.exe -C //wsl.localhost/Ubuntu/home/toddw/TTIO-MCP-Server push origin main`.
 - No branches, no PRs — same as M1 / M2.

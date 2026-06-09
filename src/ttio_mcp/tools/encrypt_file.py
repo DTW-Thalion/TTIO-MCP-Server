@@ -1,4 +1,4 @@
-"""``mpgo_encrypt_file`` — in-place AES-256-GCM intensity encryption.
+"""``ttio_encrypt_file`` — in-place AES-256-GCM intensity encryption.
 
 Resolves a catalog entry to a local path, loads the AES-256-GCM key
 from the server-side keyring by ``key_id``, and calls
@@ -16,15 +16,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     CatalogError,
     InvalidURI,
     ResolveFailed,
     resolve_local_path,
 )
-from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
-from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.hashes import hash_content_sha256, hash_file_sha256
+from ttio_mcp.keyring import AES_256_GCM, Keyring
+from ttio_mcp.tools._helpers import lookup_file
 
 ENCRYPTION_LEVELS = ["DATASET_GROUP", "DATASET", "DESCRIPTOR_STREAM", "ACCESS_UNIT"]
 
@@ -37,7 +37,7 @@ SCHEMA: dict[str, Any] = {
         "key_id": {
             "type": "string",
             "description": (
-                "Keyring id resolved server-side from MPGO_KEYRING_PATH. "
+                "Keyring id resolved server-side from TTIO_KEYRING_PATH. "
                 "The raw key is never transmitted through MCP."
             ),
         },
@@ -45,7 +45,7 @@ SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": ENCRYPTION_LEVELS,
             "description": (
-                "MPEG-O EncryptionLevel. Defaults to DATASET_GROUP "
+                "TTI-O EncryptionLevel. Defaults to DATASET_GROUP "
                 "(per-run intensity ciphertext, the common case)."
             ),
         },
@@ -82,7 +82,7 @@ async def handle(
         raise AlreadyEncrypted(
             f"file id={f.id} is already encrypted "
             f"(algorithm={f.encrypted_algorithm or 'unknown'}); "
-            f"call mpgo_decrypt_file first if you want to re-key"
+            f"call ttio_decrypt_file first if you want to re-key"
         )
 
     try:

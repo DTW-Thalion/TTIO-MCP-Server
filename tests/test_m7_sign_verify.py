@@ -9,18 +9,18 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.keyring import (
+from ttio_mcp.keyring import (
     AES_256_GCM,
     AES_256_GCM_KEY_LEN,
     HMAC_SHA256,
     AlgorithmMismatch,
     Keyring,
 )
-from mpeg_o_mcp.tools import encrypt_file as ef
-from mpeg_o_mcp.tools import sign_file as sf
-from mpeg_o_mcp.tools import verify_signature as vf
-from mpeg_o_mcp.tools.get_file import handle as handle_get_file
-from mpeg_o_mcp.tools.register import handle as handle_register
+from ttio_mcp.tools import encrypt_file as ef
+from ttio_mcp.tools import sign_file as sf
+from ttio_mcp.tools import verify_signature as vf
+from ttio_mcp.tools.get_file import handle as handle_get_file
+from ttio_mcp.tools.register import handle as handle_register
 from tests._fixtures import build_ms_fixture
 
 
@@ -199,7 +199,7 @@ async def test_sign_remote_rejected(
     session, keyring_with_hmac: tuple[Keyring, str, bytes]
 ) -> None:
     kr, key_id, _ = keyring_with_hmac
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     row = File(
         uri="s3://fake-bucket/fake.mpgo",
@@ -227,7 +227,7 @@ async def test_verify_remote_rejected(
     session, keyring_with_hmac: tuple[Keyring, str, bytes]
 ) -> None:
     kr, key_id, _ = keyring_with_hmac
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     row = File(
         uri="s3://fake-bucket/fake.mpgo",

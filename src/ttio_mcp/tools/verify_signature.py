@@ -1,9 +1,9 @@
-"""``mpgo_verify_signature`` — HMAC-SHA256 signature verification.
+"""``ttio_verify_signature`` — HMAC-SHA256 signature verification.
 
 Resolves a catalog entry to a local path, loads the HMAC-SHA256 key
 from the server-side keyring, opens the ``.mpgo`` via h5py in ``r``
 mode, and calls :func:`mpeg_o.signatures.verify_dataset` on every
-dataset that carries an ``@mpgo_signature`` attribute.
+dataset that carries an ``@ttio_signature`` attribute.
 
 Returns a per-dataset verdict map plus an aggregate ``valid`` boolean
 that is ``true`` iff every signed dataset verified under the key. If
@@ -21,14 +21,14 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     CatalogError,
     InvalidURI,
     ResolveFailed,
     resolve_local_path,
 )
-from mpeg_o_mcp.keyring import HMAC_SHA256, Keyring
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.keyring import HMAC_SHA256, Keyring
+from ttio_mcp.tools._helpers import lookup_file
 
 SIGNATURE_ALGORITHM = HMAC_SHA256
 
@@ -41,7 +41,7 @@ SCHEMA: dict[str, Any] = {
         "key_id": {
             "type": "string",
             "description": (
-                "Keyring id resolved server-side from MPGO_KEYRING_PATH. "
+                "Keyring id resolved server-side from TTIO_KEYRING_PATH. "
                 "Must reference an hmac-sha256 key."
             ),
         },
@@ -96,7 +96,7 @@ async def handle(
     if not verdicts:
         raise NotSigned(
             f"file id={f.id} has no signed datasets "
-            f"(no @mpgo_signature attributes found)"
+            f"(no @ttio_signature attributes found)"
         )
 
     all_valid = all(v for v in verdicts.values())
@@ -117,7 +117,7 @@ async def handle(
 def _verify_all_signed_datasets(path: Path, key: bytes) -> dict[str, bool]:
     """Walk every signed dataset in ``path``; return ``{hdf5_path: bool}``.
 
-    A dataset is "signed" iff its ``@mpgo_signature`` attribute is
+    A dataset is "signed" iff its ``@ttio_signature`` attribute is
     present. Empty return means nothing was signed.
     """
     import h5py

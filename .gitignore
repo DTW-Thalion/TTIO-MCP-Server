@@ -17,7 +17,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
-mpeg_o_mcp.db
+ttio_mcp.db
 ci.db
 
 # Test / tooling

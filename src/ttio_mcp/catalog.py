@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.db.models import (
+from ttio_mcp.db.models import (
     File,
     Identification,
     ProvenanceRecord,
@@ -25,7 +25,7 @@ from mpeg_o_mcp.db.models import (
     Study,
     User,
 )
-from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
+from ttio_mcp.hashes import hash_content_sha256, hash_file_sha256
 
 LOCAL_SCHEMES = {"file", ""}
 
@@ -114,7 +114,7 @@ def resolve_uri(
     """Resolve a URI into a :class:`ResolvedTarget`.
 
     Local paths / ``file://`` are canonicalised as in M2. Remote URIs
-    recognised by MPEG-O (``s3://``, ``https://``, ``gs://``, ...) are
+    recognised by TTI-O (``s3://``, ``https://``, ``gs://``, ...) are
     probed via fsspec to fail fast on 404 / 403, then passed through
     verbatim (scheme lowercased).
     """
@@ -278,7 +278,7 @@ def _run_polarity(run) -> str | None:  # type: ignore[no-untyped-def]
     if arr.size == 0:
         return None
     vals = set(int(v) for v in arr.tolist())
-    # 1 = positive, -1 = negative, 0 = unspecified per MPEG-O convention.
+    # 1 = positive, -1 = negative, 0 = unspecified per TTI-O convention.
     if vals == {1}:
         return "positive"
     if vals == {-1}:
@@ -322,7 +322,7 @@ def register_file(
     open_target: str | Path = target.local_path if not target.is_remote else canon
     try:
         dataset = SpectralDataset.open(open_target, **kwargs)
-    except Exception as exc:  # pragma: no cover - MPEG-O raises a variety
+    except Exception as exc:  # pragma: no cover - TTI-O raises a variety
         raise NotMpeg(f"{open_target}: {type(exc).__name__}: {exc}") from exc
 
     try:

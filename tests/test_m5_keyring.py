@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.keyring import (
+from ttio_mcp.keyring import (
     AES_256_GCM,
     AES_256_GCM_KEY_LEN,
     InvalidKeyring,
@@ -35,17 +35,17 @@ def test_from_path_none_is_unconfigured() -> None:
     assert kr.list_entries() == []
 
 
-def test_from_env_reads_mpgo_keyring_path(
+def test_from_env_reads_ttio_keyring_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     p = _write_keyring(tmp_path / "kr.json", {})
-    monkeypatch.setenv("MPGO_KEYRING_PATH", str(p))
+    monkeypatch.setenv("TTIO_KEYRING_PATH", str(p))
     kr = Keyring.from_env()
     assert kr.path == p
 
 
 def test_from_env_blank_is_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MPGO_KEYRING_PATH", "   ")
+    monkeypatch.setenv("TTIO_KEYRING_PATH", "   ")
     kr = Keyring.from_env()
     assert kr.path is None
 
@@ -170,7 +170,7 @@ def test_algorithm_for_without_reading_value(tmp_path: Path) -> None:
 
 def test_hmac_sha256_variable_length_key(tmp_path: Path) -> None:
     """M7: HMAC-SHA256 keys are variable-length — length checks are skipped."""
-    from mpeg_o_mcp.keyring import HMAC_SHA256
+    from ttio_mcp.keyring import HMAC_SHA256
 
     raw = b"\xaa" * 20  # arbitrary non-32-byte length
     p = _write_keyring(
@@ -187,7 +187,7 @@ def test_hmac_sha256_variable_length_key(tmp_path: Path) -> None:
 
 
 def test_hmac_sha256_empty_key_rejected(tmp_path: Path) -> None:
-    from mpeg_o_mcp.keyring import HMAC_SHA256
+    from ttio_mcp.keyring import HMAC_SHA256
 
     p = _write_keyring(
         tmp_path / "kr.json",
@@ -205,7 +205,7 @@ def test_hmac_sha256_empty_key_rejected(tmp_path: Path) -> None:
 
 def test_expected_algorithm_mismatch_raises(tmp_path: Path) -> None:
     """M7: ``get(..., expected_algorithm=...)`` refuses cross-algorithm reuse."""
-    from mpeg_o_mcp.keyring import HMAC_SHA256, AlgorithmMismatch
+    from ttio_mcp.keyring import HMAC_SHA256, AlgorithmMismatch
 
     raw = b"\x11" * 32
     p = _write_keyring(
