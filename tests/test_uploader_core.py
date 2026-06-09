@@ -1,4 +1,4 @@
-"""Pure-logic tests for ``mpeg_o_mcp.uploader.core`` — no GUI, no subprocess."""
+"""Pure-logic tests for ``ttio_mcp.uploader.core`` — no GUI, no subprocess."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.uploader.core import (
+from ttio_mcp.uploader.core import (
     IMPORTABLE_EXTENSIONS,
     copy_to_intake,
     detect_format,
@@ -39,19 +39,19 @@ def test_importable_extensions_are_lowercase_and_dotted() -> None:
 
 
 def test_get_intake_dir_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("MPGO_MCP_INTAKE_DIR", raising=False)
+    monkeypatch.delenv("TTIO_MCP_INTAKE_DIR", raising=False)
     assert get_intake_dir() is None
 
 
 def test_get_intake_dir_blank(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MPGO_MCP_INTAKE_DIR", "   ")
+    monkeypatch.setenv("TTIO_MCP_INTAKE_DIR", "   ")
     assert get_intake_dir() is None
 
 
 def test_get_intake_dir_resolves(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("MPGO_MCP_INTAKE_DIR", str(tmp_path))
+    monkeypatch.setenv("TTIO_MCP_INTAKE_DIR", str(tmp_path))
     out = get_intake_dir()
     assert out == tmp_path.resolve()
 

@@ -3,9 +3,9 @@
 Every test in this module is skipped if the optional cloud deps
 (moto, flask, s3fs, boto3) are missing. Mirrors the three hot paths:
 
-  * ``mpgo_register_file`` hashes an s3:// object and extracts metadata
+  * ``ttio_register_file`` hashes an s3:// object and extracts metadata
   * Catalog row survives a fresh session (canonical URI persists)
-  * ``mpgo_get_spectrum`` re-opens the same s3:// object lazily
+  * ``ttio_get_spectrum`` re-opens the same s3:// object lazily
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def s3_ms_fixture(tmp_path, moto_s3_server):
 
 
 def test_register_s3_roundtrip(session, s3_ms_fixture):
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, _local = s3_ms_fixture
     kwargs = s3_fsspec_kwargs(endpoint)
@@ -52,8 +52,8 @@ def test_register_s3_roundtrip(session, s3_ms_fixture):
 
 def test_register_s3_hash_matches_local(session, s3_ms_fixture):
     """Cloud and local hashing must agree byte-for-byte."""
-    from mpeg_o_mcp.hashes import hash_file_sha256
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.hashes import hash_file_sha256
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, local = s3_ms_fixture
     kwargs = s3_fsspec_kwargs(endpoint)
@@ -69,8 +69,8 @@ def test_register_s3_hash_matches_local(session, s3_ms_fixture):
 
 
 def test_get_file_after_s3_register(session, s3_ms_fixture):
-    from mpeg_o_mcp.tools.get_file import handle as handle_get
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.tools.get_file import handle as handle_get
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, _local = s3_ms_fixture
     kwargs = s3_fsspec_kwargs(endpoint)
@@ -86,8 +86,8 @@ def test_get_file_after_s3_register(session, s3_ms_fixture):
 
 
 def test_get_spectrum_streams_from_s3(session, empty_keyring, s3_ms_fixture):
-    from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, _local = s3_ms_fixture
     kwargs = s3_fsspec_kwargs(endpoint)
@@ -113,14 +113,14 @@ def test_get_spectrum_streams_from_s3(session, empty_keyring, s3_ms_fixture):
 
 
 def test_env_default_fsspec_kwargs(monkeypatch, session, s3_ms_fixture):
-    """If MPGO_MCP_FSSPEC_KWARGS is set, per-call kwargs may be empty."""
+    """If TTIO_MCP_FSSPEC_KWARGS is set, per-call kwargs may be empty."""
     import json
 
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, _local = s3_ms_fixture
     monkeypatch.setenv(
-        "MPGO_MCP_FSSPEC_KWARGS", json.dumps(s3_fsspec_kwargs(endpoint))
+        "TTIO_MCP_FSSPEC_KWARGS", json.dumps(s3_fsspec_kwargs(endpoint))
     )
 
     result = _run(handle_register(session, {"uri": uri}))
@@ -132,7 +132,7 @@ def test_per_call_overrides_env_default(monkeypatch, session, s3_ms_fixture):
     """Per-call fsspec_kwargs wins on key-by-key basis."""
     import json
 
-    from mpeg_o_mcp.tools.register import handle as handle_register
+    from ttio_mcp.tools.register import handle as handle_register
 
     endpoint, _bucket, uri, _local = s3_ms_fixture
 
@@ -142,7 +142,7 @@ def test_per_call_overrides_env_default(monkeypatch, session, s3_ms_fixture):
         "endpoint_url": "http://127.0.0.1:1",
         "region_name": "us-east-1",
     }
-    monkeypatch.setenv("MPGO_MCP_FSSPEC_KWARGS", json.dumps(bogus))
+    monkeypatch.setenv("TTIO_MCP_FSSPEC_KWARGS", json.dumps(bogus))
 
     result = _run(
         handle_register(

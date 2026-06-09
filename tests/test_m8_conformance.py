@@ -1,6 +1,6 @@
 """M8: MCP conformance suite.
 
-Drives the real ``mpeg-o-mcp`` subprocess via the ``mcp`` Python client
+Drives the real ``ttio-mcp`` subprocess via the ``mcp`` Python client
 SDK over stdio. Every other test suite in this repo calls tool handlers
 in-process; M8 proves the server works end-to-end as an MCP server:
 JSON-RPC 2.0 over stdio, protocol-version negotiation in the
@@ -18,7 +18,7 @@ Four tests cover:
   State carries through one subprocess — the catalog row accumulates
   the real ``signed``/``encrypted`` flag transitions you'd see in
   production.
-- ``mpgo_push_file`` end-to-end against a ``ThreadedMotoServer`` S3
+- ``ttio_push_file`` end-to-end against a ``ThreadedMotoServer`` S3
   endpoint — skipped when the cloud extras aren't installed.
 - Structured error envelope — a lookup by bogus id returns
   ``{"ok": false, "error": {"code": "not_found", ...}}`` on the wire.
@@ -42,26 +42,26 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from mpeg_o_mcp.db import Base, make_engine, make_session_factory
-from mpeg_o_mcp.db.models import User
-from mpeg_o_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, HMAC_SHA256
+from ttio_mcp.db import Base, make_engine, make_session_factory
+from ttio_mcp.db.models import User
+from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, HMAC_SHA256
 from tests._fixtures import build_ms_fixture
 
 EXPECTED_TOOLS = {
-    "mpgo_register_file",
-    "mpgo_list_files",
-    "mpgo_get_file",
-    "mpgo_reverify",
-    "mpgo_search_identifications",
-    "mpgo_get_run",
-    "mpgo_get_spectrum",
-    "mpgo_get_quantifications",
-    "mpgo_encrypt_file",
-    "mpgo_decrypt_file",
-    "mpgo_push_file",
-    "mpgo_sign_file",
-    "mpgo_verify_signature",
-    "mpgo_launch_uploader",
+    "ttio_register_file",
+    "ttio_list_files",
+    "ttio_get_file",
+    "ttio_reverify",
+    "ttio_search_identifications",
+    "ttio_get_run",
+    "ttio_get_spectrum",
+    "ttio_get_quantifications",
+    "ttio_encrypt_file",
+    "ttio_decrypt_file",
+    "ttio_push_file",
+    "ttio_sign_file",
+    "ttio_verify_signature",
+    "ttio_launch_uploader",
 }
 
 
@@ -105,14 +105,14 @@ def _write_keyring(path: Path) -> Path:
 def _server_params(env_overrides: dict[str, str]) -> StdioServerParameters:
     """Build ``StdioServerParameters`` that launches the real server.
 
-    Prefers the installed ``mpeg-o-mcp`` console script; falls back to
-    ``python -m mpeg_o_mcp.server`` so the test works against an
+    Prefers the installed ``ttio-mcp`` console script; falls back to
+    ``python -m ttio_mcp.server`` so the test works against an
     editable install without relying on ``PATH`` order.
     """
-    command = shutil.which("mpeg-o-mcp") or sys.executable
+    command = shutil.which("ttio-mcp") or sys.executable
     args: list[str] = []
     if command == sys.executable:
-        args = ["-m", "mpeg_o_mcp.server"]
+        args = ["-m", "ttio_mcp.server"]
 
     child_env = os.environ.copy()
     child_env.update(env_overrides)
@@ -146,7 +146,7 @@ async def _call(session: ClientSession, name: str, args: dict[str, Any]) -> dict
 @pytest.mark.asyncio
 async def test_conformance_initialize_and_list_tools(tmp_path: Path) -> None:
     db_url = _seed_db(tmp_path / "catalog.db")
-    params = _server_params({"MPGO_MCP_DB_URL": db_url})
+    params = _server_params({"TTIO_MCP_DB_URL": db_url})
 
     async with _session(params) as session:
         result = await session.list_tools()
@@ -183,13 +183,13 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
     fixture = build_ms_fixture(tmp_path / "sample.mpgo")
 
     params = _server_params({
-        "MPGO_MCP_DB_URL": db_url,
-        "MPGO_KEYRING_PATH": str(keyring_path),
+        "TTIO_MCP_DB_URL": db_url,
+        "TTIO_KEYRING_PATH": str(keyring_path),
     })
 
     async with _session(params) as session:
         # --- register ---
-        r = await _call(session, "mpgo_register_file", {"uri": str(fixture)})
+        r = await _call(session, "ttio_register_file", {"uri": str(fixture)})
         assert r["ok"] is True, r
         file_id = r["data"]["file_id"]
         assert r["data"]["counts"]["runs"] == 1
@@ -197,40 +197,40 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         assert r["data"]["counts"]["quantifications"] == 2
 
         # --- list ---
-        r = await _call(session, "mpgo_list_files", {})
+        r = await _call(session, "ttio_list_files", {})
         assert r["ok"] is True
         assert r["data"]["total"] == 1
         assert r["data"]["files"][0]["id"] == file_id
 
         # --- get ---
-        r = await _call(session, "mpgo_get_file", {"id": file_id})
+        r = await _call(session, "ttio_get_file", {"id": file_id})
         assert r["ok"] is True
         assert r["data"]["id"] == file_id
         run_id = r["data"]["runs"][0]["id"]
 
         # --- get_run ---
-        r = await _call(session, "mpgo_get_run", {"run_id": run_id})
+        r = await _call(session, "ttio_get_run", {"run_id": run_id})
         assert r["ok"] is True
         assert r["data"]["acquisition_mode"]
         assert len(r["data"]["identifications"]) == 2
 
         # --- search_identifications ---
         r = await _call(
-            session, "mpgo_search_identifications", {"chebi_id": "CHEBI:15377"}
+            session, "ttio_search_identifications", {"chebi_id": "CHEBI:15377"}
         )
         assert r["ok"] is True
         assert r["data"]["total"] == 1
         assert r["data"]["identifications"][0]["chebi_id"] == "CHEBI:15377"
 
         # --- get_quantifications ---
-        r = await _call(session, "mpgo_get_quantifications", {"file_id": file_id})
+        r = await _call(session, "ttio_get_quantifications", {"file_id": file_id})
         assert r["ok"] is True
         assert r["data"]["total"] == 2
 
         # --- get_spectrum (plaintext) ---
         r = await _call(
             session,
-            "mpgo_get_spectrum",
+            "ttio_get_spectrum",
             {"run_id": run_id, "spectrum_index": 0},
         )
         assert r["ok"] is True
@@ -240,7 +240,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         # --- sign ---
         r = await _call(
             session,
-            "mpgo_sign_file",
+            "ttio_sign_file",
             {"id": file_id, "key_id": "hmac-demo"},
         )
         assert r["ok"] is True
@@ -251,7 +251,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         # --- verify_signature ---
         r = await _call(
             session,
-            "mpgo_verify_signature",
+            "ttio_verify_signature",
             {"id": file_id, "key_id": "hmac-demo"},
         )
         assert r["ok"] is True
@@ -259,7 +259,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         assert all(r["data"]["verified_datasets"].values())
 
         # --- reverify (no drift — signing updated catalog hashes) ---
-        r = await _call(session, "mpgo_reverify", {"id": file_id})
+        r = await _call(session, "ttio_reverify", {"id": file_id})
         assert r["ok"] is True
         assert r["data"]["resolved"] is True
         assert r["data"]["drift"] is False
@@ -267,7 +267,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         # --- encrypt ---
         r = await _call(
             session,
-            "mpgo_encrypt_file",
+            "ttio_encrypt_file",
             {"id": file_id, "key_id": "aes-demo"},
         )
         assert r["ok"] is True
@@ -277,7 +277,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         # --- get_spectrum (with key_id, against encrypted file) ---
         r = await _call(
             session,
-            "mpgo_get_spectrum",
+            "ttio_get_spectrum",
             {"run_id": run_id, "spectrum_index": 0, "key_id": "aes-demo"},
         )
         assert r["ok"] is True
@@ -286,7 +286,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
         # --- decrypt ---
         r = await _call(
             session,
-            "mpgo_decrypt_file",
+            "ttio_decrypt_file",
             {"id": file_id, "key_id": "aes-demo"},
         )
         assert r["ok"] is True
@@ -294,7 +294,7 @@ async def test_conformance_local_tools_round_trip(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. mpgo_push_file — cloud path, skipped without moto
+# 3. ttio_push_file — cloud path, skipped without moto
 # ---------------------------------------------------------------------------
 
 
@@ -310,14 +310,14 @@ async def test_conformance_push_file(tmp_path: Path, moto_s3_server) -> None:
 
     fsspec_kwargs = s3_fsspec_kwargs(endpoint)
     params = _server_params({
-        "MPGO_MCP_DB_URL": db_url,
-        "MPGO_MCP_FSSPEC_KWARGS": json.dumps(fsspec_kwargs),
+        "TTIO_MCP_DB_URL": db_url,
+        "TTIO_MCP_FSSPEC_KWARGS": json.dumps(fsspec_kwargs),
     })
 
     async with _session(params) as session:
         r = await _call(
             session,
-            "mpgo_push_file",
+            "ttio_push_file",
             {"local_uri": str(fixture), "remote_uri": remote_uri},
         )
 
@@ -335,10 +335,10 @@ async def test_conformance_push_file(tmp_path: Path, moto_s3_server) -> None:
 @pytest.mark.asyncio
 async def test_conformance_error_envelope(tmp_path: Path) -> None:
     db_url = _seed_db(tmp_path / "catalog.db")
-    params = _server_params({"MPGO_MCP_DB_URL": db_url})
+    params = _server_params({"TTIO_MCP_DB_URL": db_url})
 
     async with _session(params) as session:
-        r = await _call(session, "mpgo_get_file", {"id": 999})
+        r = await _call(session, "ttio_get_file", {"id": 999})
 
     assert r["ok"] is False
     assert r["error"]["code"] == "not_found"

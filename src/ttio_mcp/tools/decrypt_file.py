@@ -1,4 +1,4 @@
-"""``mpgo_decrypt_file`` — in-place persist-to-disk decryption.
+"""``ttio_decrypt_file`` — in-place persist-to-disk decryption.
 
 Resolves a catalog entry to a local path, loads the AES-256-GCM key
 from the server-side keyring by ``key_id``, and calls
@@ -17,15 +17,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     CatalogError,
     InvalidURI,
     ResolveFailed,
     resolve_local_path,
 )
-from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
-from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.hashes import hash_content_sha256, hash_file_sha256
+from ttio_mcp.keyring import AES_256_GCM, Keyring
+from ttio_mcp.tools._helpers import lookup_file
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -36,7 +36,7 @@ SCHEMA: dict[str, Any] = {
         "key_id": {
             "type": "string",
             "description": (
-                "Keyring id resolved server-side from MPGO_KEYRING_PATH."
+                "Keyring id resolved server-side from TTIO_KEYRING_PATH."
             ),
         },
         "as_user": {"type": "string"},

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.tools.get_file import handle as handle_get
-from mpeg_o_mcp.tools.list_files import handle as handle_list
-from mpeg_o_mcp.tools.register import handle as handle_register
-from mpeg_o_mcp.tools.reverify import handle as handle_reverify
+from ttio_mcp.tools.get_file import handle as handle_get
+from ttio_mcp.tools.list_files import handle as handle_list
+from ttio_mcp.tools.register import handle as handle_register
+from ttio_mcp.tools.reverify import handle as handle_reverify
 from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
@@ -98,14 +98,14 @@ async def test_reverify_missing_file(session, tmp_path: Path) -> None:
 
 async def test_register_error_surfaces_as_catalog_error(session, tmp_path: Path) -> None:
     # Path that doesn't exist → ResolveFailed (a CatalogError subclass).
-    from mpeg_o_mcp.catalog import ResolveFailed
+    from ttio_mcp.catalog import ResolveFailed
 
     with pytest.raises(ResolveFailed):
         await handle_register(session, {"uri": str(tmp_path / "nope.mpgo")})
 
 
 async def test_get_file_unknown_id_raises(session) -> None:
-    from mpeg_o_mcp.catalog import NotFound
+    from ttio_mcp.catalog import NotFound
 
     with pytest.raises(NotFound):
         await handle_get(session, {"id": 42})
@@ -114,10 +114,10 @@ async def test_get_file_unknown_id_raises(session) -> None:
 def test_tool_schemas_are_valid_json() -> None:
     # The registration module is the public tool surface — make sure
     # each schema round-trips through json, since MCP serializes them.
-    from mpeg_o_mcp.tools import TOOLS
+    from ttio_mcp.tools import TOOLS
 
     for name, desc, schema, _handler in TOOLS:
-        assert isinstance(name, str) and name.startswith("mpgo_")
+        assert isinstance(name, str) and name.startswith("ttio_")
         assert desc
         round_trip = json.loads(json.dumps(schema))
         assert round_trip == schema

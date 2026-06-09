@@ -1,6 +1,6 @@
 """Pure-logic core for the uploader — no GUI, no subprocess.
 
-Isolated from :mod:`mpeg_o_mcp.uploader.gui` so the bulk of the
+Isolated from :mod:`ttio_mcp.uploader.gui` so the bulk of the
 uploader's behaviour is unit-testable without a display server.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ ProgressCallback = Callable[[int, int], None]
 
 
 def detect_format(path: Path) -> str | None:
-    """Return the MPEG-O format identifier for *path*, or ``None``.
+    """Return the TTI-O format identifier for *path*, or ``None``.
 
     Detection is purely suffix-based (case-insensitive). The server's
     import tool is expected to re-validate by opening the file, so this
@@ -37,13 +37,13 @@ def detect_format(path: Path) -> str | None:
 
 
 def get_intake_dir() -> Path | None:
-    """Resolve ``MPGO_MCP_INTAKE_DIR`` to an absolute :class:`Path`.
+    """Resolve ``TTIO_MCP_INTAKE_DIR`` to an absolute :class:`Path`.
 
     Returns ``None`` when the variable is unset or empty. The directory
     is **not** created here — the caller decides whether to auto-create
     or surface ``intake_not_configured``.
     """
-    raw = os.environ.get("MPGO_MCP_INTAKE_DIR", "").strip()
+    raw = os.environ.get("TTIO_MCP_INTAKE_DIR", "").strip()
     if not raw:
         return None
     return Path(raw).expanduser().resolve()

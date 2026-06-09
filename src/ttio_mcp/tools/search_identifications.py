@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.db.models import File, Identification, Run
+from ttio_mcp.db.models import File, Identification, Run
 
 SCHEMA: dict[str, Any] = {
     "type": "object",

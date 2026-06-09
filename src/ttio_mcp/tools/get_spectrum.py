@@ -12,10 +12,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
-from mpeg_o_mcp.db.models import File, Run
-from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
-from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
+from ttio_mcp.catalog import CatalogError, NotFound, resolve_uri
+from ttio_mcp.db.models import File, Run
+from ttio_mcp.keyring import AES_256_GCM, Keyring
+from ttio_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 DEFAULT_MAX_POINTS = 1000
 MAX_POINTS_CAP = 100_000
@@ -38,7 +38,7 @@ SCHEMA: dict[str, Any] = {
             "type": "object",
             "description": (
                 "Optional fsspec kwargs for remote URIs. Shallow-merged on top "
-                "of MPGO_MCP_FSSPEC_KWARGS (per-call keys win). Ignored for "
+                "of TTIO_MCP_FSSPEC_KWARGS (per-call keys win). Ignored for "
                 "local files."
             ),
             "additionalProperties": True,
@@ -141,10 +141,10 @@ async def handle(
                     f"decrypt_with_key failed on {open_target}: "
                     f"{type(exc).__name__}: {exc}"
                 ) from exc
-        mpgo_run = dataset.all_runs.get(run.name)
-        if mpgo_run is None:
+        ttio_run = dataset.all_runs.get(run.name)
+        if ttio_run is None:
             raise ReadFailed(f"run {run.name!r} not found in {open_target}")
-        spec = mpgo_run.object_at_index(spectrum_index)
+        spec = ttio_run.object_at_index(spectrum_index)
         payload = _serialize_spectrum(
             spec, run, spectrum_index, max_points=max_points
         )
@@ -212,7 +212,7 @@ def _serialize_spectrum(
 def _channel_array(spec, name: str):  # type: ignore[no-untyped-def]
     """Pull the underlying numpy array for a named channel.
 
-    MPEG-O returns a :class:`SignalArray` wrapper (``.data`` is the
+    TTI-O returns a :class:`SignalArray` wrapper (``.data`` is the
     ndarray). For named convenience accessors (``spec.mz_array``)
     prefer those; otherwise fall through to ``spec.signal_array(name)``.
     """

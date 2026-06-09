@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.catalog import UnknownUser
-from mpeg_o_mcp.db.models import User
-from mpeg_o_mcp.tools.register import handle as handle_register
+from ttio_mcp.catalog import UnknownUser
+from ttio_mcp.db.models import User
+from ttio_mcp.tools.register import handle as handle_register
 from tests._fixtures import build_ms_fixture
 
 
@@ -25,7 +25,7 @@ async def test_as_user_unknown_raises(session, ms_file: Path) -> None:
 
 async def test_as_user_system_default_works(session, ms_file: Path) -> None:
     # No as_user → seeded 'system' user is used.
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     reg = await handle_register(session, {"uri": str(ms_file)})
     assert reg["counts"]["runs"] == 1
@@ -37,7 +37,7 @@ async def test_as_user_system_default_works(session, ms_file: Path) -> None:
 
 
 async def test_as_user_existing_is_accepted(session, ms_file: Path) -> None:
-    from mpeg_o_mcp.db.models import File
+    from ttio_mcp.db.models import File
 
     session.add(User(name="alice"))
     session.commit()

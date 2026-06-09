@@ -1,4 +1,4 @@
-"""``mpgo_push_file`` — upload a local .mpgo to a cloud URI, optionally encrypt-on-upload.
+"""``ttio_push_file`` — upload a local .mpgo to a cloud URI, optionally encrypt-on-upload.
 
 Reads a local ``.mpgo``, optionally encrypts a throwaway copy with an
 AES-256-GCM key from the server-side keyring, streams the bytes to a
@@ -7,7 +7,7 @@ object in the catalog.
 
 The local source is never modified. To post-hoc encrypt a file that
 already lives in the cloud, the workflow is manual — pull it down,
-encrypt with :func:`mpgo_encrypt_file`, push it back with this tool.
+encrypt with :func:`ttio_encrypt_file`, push it back with this tool.
 
 Only writable cloud schemes are accepted for ``remote_uri``:
 ``s3://``, ``gs://``, ``gcs://``, ``abfs://``, ``abfss://``, ``az://``.
@@ -24,16 +24,16 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     CatalogError,
     InvalidURI,
     register_file,
     resolve_local_path,
 )
-from mpeg_o_mcp.db.models import File
-from mpeg_o_mcp.keyring import AES_256_GCM, Keyring
-from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
-from mpeg_o_mcp.tools.encrypt_file import ENCRYPTION_LEVELS
+from ttio_mcp.db.models import File
+from ttio_mcp.keyring import AES_256_GCM, Keyring
+from ttio_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
+from ttio_mcp.tools.encrypt_file import ENCRYPTION_LEVELS
 
 WRITABLE_REMOTE_SCHEMES = {"s3", "gs", "gcs", "abfs", "abfss", "az"}
 
@@ -67,7 +67,7 @@ SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": ENCRYPTION_LEVELS,
             "description": (
-                "MPEG-O EncryptionLevel. Only consulted when key_id is set. "
+                "TTI-O EncryptionLevel. Only consulted when key_id is set. "
                 "Defaults to DATASET_GROUP."
             ),
         },
@@ -83,7 +83,7 @@ SCHEMA: dict[str, Any] = {
             "description": (
                 "Forwarded to fsspec.open for both the upload and the "
                 "post-upload register. Shallow-merged on top of "
-                "MPGO_MCP_FSSPEC_KWARGS."
+                "TTIO_MCP_FSSPEC_KWARGS."
             ),
         },
     },

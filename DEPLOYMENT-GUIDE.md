@@ -1,7 +1,7 @@
 # Deployment Guide
 
 This guide walks you through **installing, configuring, and running**
-the MPEG-O MCP Server from a fresh machine. It assumes you know how to
+the TTI-O MCP Server from a fresh machine. It assumes you know how to
 open a terminal, run commands, and edit text files, but it does not
 assume you've worked with Python packaging, SQLAlchemy, or the Model
 Context Protocol before.
@@ -33,7 +33,7 @@ actually does before you run it, start with
 
 ## What this server is
 
-**MPEG-O** is a scientific file format for multi-omics data — mass
+**TTI-O** is a scientific file format for multi-omics data — mass
 spectrometry runs, NMR spectra, identifications, quantifications.
 Think of a `.mpgo` file as one self-contained record of a biology
 experiment.
@@ -45,7 +45,7 @@ tools in a consistent way. Every MCP server exposes a handful of
 (Claude, an IDE plugin, a custom script) sends a tool call; the
 server does the work and sends back a reply.
 
-**MPEG-O MCP Server** is the bridge between those two worlds. It lets
+**TTI-O MCP Server** is the bridge between those two worlds. It lets
 a language model:
 
 - **Catalog** `.mpgo` files — the server reads each file once,
@@ -64,13 +64,13 @@ a language model:
 - **Sign and verify** — tamper-detect a file's signal-channel datasets
   with HMAC-SHA256 using a separate server-side key. Signatures are
   embedded in HDF5 attributes on each dataset; re-running
-  `mpgo_verify_signature` with the same key tells you whether anything
+  `ttio_verify_signature` with the same key tells you whether anything
   changed.
 
 The server runs as a small Python program. By default it talks to one
 client at a time over **standard input/output** (stdio) — the same
 channel that command-line programs use to read and write text. The
-client starts `mpeg-o-mcp` as a child process, exchanges messages
+client starts `ttio-mcp` as a child process, exchanges messages
 with it, and shuts it down when the conversation ends.
 
 ## How it works (architecture)
@@ -79,7 +79,7 @@ A bird's-eye picture:
 
 ```
 ┌────────────────────────┐        stdio pipe        ┌──────────────────────────┐
-│   MCP client           │  ◀──── JSON-RPC ────▶   │   mpeg-o-mcp (this repo) │
+│   MCP client           │  ◀──── JSON-RPC ────▶   │   ttio-mcp (this repo) │
 │   (Claude, IDE, ...)   │                          │                          │
 └────────────────────────┘                          │  ┌────────────────────┐  │
                                                     │  │ MCP server loop    │  │
@@ -94,7 +94,7 @@ A bird's-eye picture:
                                 ┌───────────────────┼────────────┼─────────────┼───────────────────┐
                                 │                   │            │             │                   │
                           ┌─────▼─────┐       ┌─────▼──────┐  ┌──▼───────┐  ┌──▼────────────┐      │
-                          │ Catalog   │       │ Keyring    │  │ MPEG-O   │  │ fsspec        │      │
+                          │ Catalog   │       │ Keyring    │  │ TTI-O   │  │ fsspec        │      │
                           │ (SQLite / │       │ (JSON file │  │ library  │  │ (cloud I/O:   │      │
                           │  Postgres)│       │  on disk)  │  │ (.mpgo   │  │  S3, GCS, …)  │      │
                           └───────────┘       └────────────┘  │  reader) │  └───────────────┘      │
@@ -110,26 +110,26 @@ A bird's-eye picture:
 ### The players
 
 - **MCP client.** Your chat UI, IDE plugin, or custom script. Starts
-  `mpeg-o-mcp` as a subprocess; sends JSON messages down stdin; reads
+  `ttio-mcp` as a subprocess; sends JSON messages down stdin; reads
   replies from stdout.
-- **mpeg-o-mcp.** A Python package. Its entry point is `serve()` in
-  `src/mpeg_o_mcp/server.py`. It builds an `mcp.server.lowlevel.Server`,
+- **ttio-mcp.** A Python package. Its entry point is `serve()` in
+  `src/ttio_mcp/server.py`. It builds an `mcp.server.lowlevel.Server`,
   registers the 14 tool handlers, and runs the stdio loop.
 - **Catalog.** A small SQL database (SQLite by default, Postgres
   works too). Seven tables: `users`, `files`, `studies`, `runs`,
   `identifications`, `quantifications`, `provenance_records`. The
   schema is managed by **Alembic** migrations.
 - **Keyring.** A JSON file on disk whose path you control via the
-  `MPGO_KEYRING_PATH` environment variable. Maps a short `key_id`
+  `TTIO_KEYRING_PATH` environment variable. Maps a short `key_id`
   like `"demo"` to key material plus an `algorithm` tag. Two
   algorithms are recognised: `"AES-256-GCM"` (exactly 32 bytes, used
   by encrypt / decrypt / push) and `"hmac-sha256"` (variable-length
   non-empty, used by sign / verify). Each tool pins the algorithm it
   expects, so an AES key cannot be used to sign and an HMAC key
   cannot be used to encrypt.
-- **MPEG-O library.** The Python package `mpeg-o` does all the real
+- **TTI-O library.** The Python package `mpeg-o` does all the real
   `.mpgo` reading, writing, encrypting, decrypting. Our server is
-  mostly orchestration — it decides *when* to call MPEG-O, and what
+  mostly orchestration — it decides *when* to call TTI-O, and what
   to persist afterwards.
 - **fsspec.** The Python filesystem abstraction that lets the same
   code open a local file, an S3 object, a GCS object, or an Azure
@@ -144,10 +144,10 @@ search on, and stores **only that metadata**. The raw spectrum bytes
 stay on disk or in cloud storage.
 
 - If the file moves or changes, you re-register it (or call
-  `mpgo_reverify` to detect drift).
+  `ttio_reverify` to detect drift).
 - If the file is deleted out from under the server, the catalog row
-  still exists — `mpgo_reverify` will flag it as unresolvable.
-- If you need an actual spectrum in the chat, `mpgo_get_spectrum`
+  still exists — `ttio_reverify` will flag it as unresolvable.
+- If you need an actual spectrum in the chat, `ttio_get_spectrum`
   reopens the file, pulls one spectrum by index, downsamples it to
   fit a chat-sized response, and returns channel arrays plus
   metadata.
@@ -160,16 +160,16 @@ no re-download, no re-parse.
 ### What a tool call looks like
 
 Let's trace one example end to end. The MCP client calls
-`mpgo_get_spectrum` with:
+`ttio_get_spectrum` with:
 
 ```json
 { "run_id": 7, "spectrum_index": 42 }
 ```
 
 1. The MCP SDK on our side parses the JSON-RPC request and calls the
-   registered `call_tool` handler in `src/mpeg_o_mcp/tools/__init__.py`.
+   registered `call_tool` handler in `src/ttio_mcp/tools/__init__.py`.
 2. That dispatcher looks up the handler by name — here
-   `mpeg_o_mcp.tools.get_spectrum.handle` — and checks whether it
+   `ttio_mcp.tools.get_spectrum.handle` — and checks whether it
    accepts a `keyring` argument. It does, so the dispatcher hands
    over a reference to the loaded keyring.
 3. The handler asks the catalog: "What file does run 7 belong to?"
@@ -178,10 +178,10 @@ Let's trace one example end to end. The MCP client calls
 4. If the file is marked `encrypted=true`, the handler requires a
    `key_id` argument. Absent one, it returns `key_required`. Present
    one, it resolves the key through the keyring **in-process** and
-   calls MPEG-O to decrypt in-memory.
+   calls TTI-O to decrypt in-memory.
 5. The handler calls `mpeg_o.SpectralDataset.open(...)` — either with
    a local path or with an fsspec-backed stream for cloud URIs — and
-   asks MPEG-O for spectrum 42.
+   asks TTI-O for spectrum 42.
 6. The handler downsamples arrays past `max_points` (default 1000),
    collects metadata, builds a JSON response, closes the dataset, and
    returns.
@@ -196,7 +196,7 @@ lookup, maybe do disk/cloud I/O, return JSON.
 A keyring is a JSON file on the same machine as the server. The MCP
 client sends a **short name** like `"demo"` — never the key itself.
 The server resolves that name to raw bytes in its own memory, hands
-those bytes to MPEG-O for encrypt/decrypt, and throws the response
+those bytes to TTI-O for encrypt/decrypt, and throws the response
 back to the client with only the `key_id` string in it. The client
 never sees, handles, or is able to exfiltrate the key bytes through
 the MCP protocol.
@@ -217,9 +217,9 @@ should not check it into version control.
   access, run the server inside a remote-access tool (SSH, a
   VS Code Remote session, etc.) or behind an MCP-over-HTTP proxy.
 - **It does not encrypt files already in the cloud.**
-  `mpgo_encrypt_file` / `mpgo_decrypt_file` are **local-only** — a
+  `ttio_encrypt_file` / `ttio_decrypt_file` are **local-only** — a
   cloud URI returns `remote_not_supported`. For publishing a fresh
-  local file, use `mpgo_push_file` with a `key_id` — the file is
+  local file, use `ttio_push_file` with a `key_id` — the file is
   encrypted locally into a temp copy and only the ciphertext is
   uploaded. For an object that already sits in the cloud, the
   workflow is manual: pull it down, encrypt locally, push back.
@@ -253,12 +253,12 @@ PATH.
 ## Quickstart
 
 For the impatient. This drops a single-user, local-only, unencrypted
-install into `~/mpeg-o-mcp`.
+install into `~/ttio-mcp`.
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/DTW-Thalion/MPEG-O-MCP-Server.git ~/mpeg-o-mcp
-cd ~/mpeg-o-mcp
+git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git ~/ttio-mcp
+cd ~/ttio-mcp
 
 # 2. Create a virtual environment
 python3 -m venv .venv
@@ -271,13 +271,13 @@ pip install -e ".[dev]"
 alembic upgrade head
 
 # 5. Verify the server launches
-mpeg-o-mcp <<< '' ; echo "exit code: $?"   # exits 0 on clean EOF
+ttio-mcp <<< '' ; echo "exit code: $?"   # exits 0 on clean EOF
 
 # 6. Wire it into Claude Code
-claude mcp add mpeg-o-mcp -- "$(pwd)/.venv/bin/mpeg-o-mcp"
+claude mcp add ttio-mcp -- "$(pwd)/.venv/bin/ttio-mcp"
 ```
 
-You can now ask Claude to call `mpgo_register_file`, etc.
+You can now ask Claude to call `ttio_register_file`, etc.
 
 The rest of this guide explains each step in detail and covers the
 multi-user, cloud, and encryption setups.
@@ -293,8 +293,8 @@ code and the virtual environment together take about 500 MB; the
 catalog file is kilobytes unless you register thousands of `.mpgo`s.
 
 ```bash
-git clone https://github.com/DTW-Thalion/MPEG-O-MCP-Server.git ~/mpeg-o-mcp
-cd ~/mpeg-o-mcp
+git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git ~/ttio-mcp
+cd ~/ttio-mcp
 ```
 
 ### 2. Create a virtual environment
@@ -307,7 +307,7 @@ Python so upgrades can't break your OS.
 python3 -m venv .venv
 ```
 
-Activate it in every shell where you want to run `mpeg-o-mcp` or its
+Activate it in every shell where you want to run `ttio-mcp` or its
 commands:
 
 ```bash
@@ -376,12 +376,12 @@ you deploy beyond a single developer's laptop.
 
 | Variable | What it controls | Default |
 |---|---|---|
-| `MPGO_MCP_DB_URL` | Which database holds the catalog. | `sqlite:///mpeg_o_mcp.db` (a file in the current directory) |
-| `MPGO_MCP_FSSPEC_KWARGS` | Default options passed to every cloud-filesystem call. | *(none)* |
-| `MPGO_KEYRING_PATH` | Path to the JSON file that holds encryption keys. | *(none — encryption tools refuse to run)* |
-| `MPGO_MCP_INTAKE_DIR` | Directory where `mpgo_launch_uploader` stages files picked by the user. | *(none — the uploader tool refuses to run)* |
+| `TTIO_MCP_DB_URL` | Which database holds the catalog. | `sqlite:///ttio_mcp.db` (a file in the current directory) |
+| `TTIO_MCP_FSSPEC_KWARGS` | Default options passed to every cloud-filesystem call. | *(none)* |
+| `TTIO_KEYRING_PATH` | Path to the JSON file that holds encryption keys. | *(none — encryption tools refuse to run)* |
+| `TTIO_MCP_INTAKE_DIR` | Directory where `ttio_launch_uploader` stages files picked by the user. | *(none — the uploader tool refuses to run)* |
 
-Set them **in the shell that launches `mpeg-o-mcp`**. If you're
+Set them **in the shell that launches `ttio-mcp`**. If you're
 wiring the server into Claude Code or another client, you'll set
 them in the same shell where you run `claude mcp add ...`.
 
@@ -397,10 +397,10 @@ For a shared server or production use, prefer Postgres. The schema
 is identical; only the URL changes:
 
 ```bash
-export MPGO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/mpeg_o_mcp"
+export TTIO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/ttio_mcp"
 ```
 
-Create the empty database in Postgres first (`createdb mpeg_o_mcp`),
+Create the empty database in Postgres first (`createdb ttio_mcp`),
 then run `alembic upgrade head` against the new URL.
 
 ### Cloud filesystem defaults
@@ -409,13 +409,13 @@ Only relevant if you plan to register cloud URIs. Example for a
 private S3 bucket that should use your default AWS credentials:
 
 ```bash
-export MPGO_MCP_FSSPEC_KWARGS='{"anon": false}'
+export TTIO_MCP_FSSPEC_KWARGS='{"anon": false}'
 ```
 
 For a MinIO / LocalStack / custom-endpoint S3:
 
 ```bash
-export MPGO_MCP_FSSPEC_KWARGS='{
+export TTIO_MCP_FSSPEC_KWARGS='{
   "anon": false,
   "client_kwargs": {"endpoint_url": "https://minio.example:9000"}
 }'
@@ -424,7 +424,7 @@ export MPGO_MCP_FSSPEC_KWARGS='{
 For a public bucket:
 
 ```bash
-export MPGO_MCP_FSSPEC_KWARGS='{"anon": true}'
+export TTIO_MCP_FSSPEC_KWARGS='{"anon": true}'
 ```
 
 Individual tool calls can override any key — so you can have anon-default
@@ -439,7 +439,7 @@ full recipe.
 `.gitignore` if it's anywhere inside a git repo.
 
 ```bash
-KEYRING=~/.config/mpeg-o-mcp/keyring.json
+KEYRING=~/.config/ttio-mcp/keyring.json
 mkdir -p "$(dirname "$KEYRING")"
 chmod 700 "$(dirname "$KEYRING")"
 ```
@@ -468,7 +468,7 @@ chmod 600 "$KEYRING"
 **Step 3** — point the server at it:
 
 ```bash
-export MPGO_KEYRING_PATH="$KEYRING"
+export TTIO_KEYRING_PATH="$KEYRING"
 ```
 
 You can add more keys to the same file later — just add another
@@ -496,7 +496,7 @@ PY
 ```
 
 `hmac-sha256` keys can be any non-empty length — 32 bytes is the
-conventional HMAC-SHA256 key size and what MPEG-O's own tests use, so
+conventional HMAC-SHA256 key size and what TTI-O's own tests use, so
 it's a sensible default. `AES-256-GCM` keys must be exactly 32 bytes.
 
 **Do not commit this file anywhere.** If you lose an encryption key,
@@ -508,14 +508,14 @@ and re-key.
 
 ### Setting up the intake directory
 
-`mpgo_launch_uploader` pops a tkinter file-picker on the same
+`ttio_launch_uploader` pops a tkinter file-picker on the same
 desktop the server is running on (MCP stdio is same-machine by
 definition) and copies the chosen file into whatever directory
-`MPGO_MCP_INTAKE_DIR` points to. Without that env var set, the tool
+`TTIO_MCP_INTAKE_DIR` points to. Without that env var set, the tool
 refuses to run.
 
 ```bash
-export MPGO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
+export TTIO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
 ```
 
 The server auto-creates the directory on first use, so you don't need
@@ -523,7 +523,7 @@ The server auto-creates the directory on first use, so you don't need
 appends a UTC timestamp (`sample-20260424T120000Z.mpgo`); a second
 collision tacks on an integer. The original on disk is never touched.
 
-After a file is staged, call `mpgo_register_file` against the
+After a file is staged, call `ttio_register_file` against the
 returned `destination` to bring it into the catalog — the uploader
 itself writes no catalog rows.
 
@@ -536,7 +536,7 @@ active display session:
 
 Headless deployments (SSH-only hosts, containers without an X server)
 will get `no_display` back — for those, bypass the uploader and point
-`mpgo_register_file` straight at your existing file.
+`ttio_register_file` straight at your existing file.
 
 ---
 
@@ -563,8 +563,8 @@ What just happened:
 You can always inspect what it did:
 
 ```bash
-sqlite3 mpeg_o_mcp.db ".tables"
-sqlite3 mpeg_o_mcp.db "SELECT * FROM users;"
+sqlite3 ttio_mcp.db ".tables"
+sqlite3 ttio_mcp.db "SELECT * FROM users;"
 ```
 
 To completely reset (destructive — wipes all catalog data):
@@ -584,19 +584,19 @@ on which client you use, the setup differs slightly.
 ### Claude Code
 
 ```bash
-claude mcp add mpeg-o-mcp -- "$(pwd)/.venv/bin/mpeg-o-mcp"
+claude mcp add ttio-mcp -- "$(pwd)/.venv/bin/ttio-mcp"
 ```
 
 Notes:
 
-- Use the **full path** to the `mpeg-o-mcp` binary inside your venv.
+- Use the **full path** to the `ttio-mcp` binary inside your venv.
   Claude will launch this directly — it won't inherit your shell's
   venv activation.
-- Environment variables (`MPGO_MCP_DB_URL` etc.) need to be visible
+- Environment variables (`TTIO_MCP_DB_URL` etc.) need to be visible
   **in the process that runs `claude mcp add ...`** so Claude
   captures them. Alternatively, write them into Claude Code's
   settings in `.mcp.json`.
-- Verify with `claude mcp list` — you should see `mpeg-o-mcp` and a
+- Verify with `claude mcp list` — you should see `ttio-mcp` and a
   green status.
 
 ### Generic MCP client (custom script)
@@ -610,9 +610,9 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 params = StdioServerParameters(
-    command="/home/you/mpeg-o-mcp/.venv/bin/mpeg-o-mcp",
+    command="/home/you/ttio-mcp/.venv/bin/ttio-mcp",
     args=[],
-    env={"MPGO_MCP_DB_URL": "sqlite:////tmp/cat.db"},
+    env={"TTIO_MCP_DB_URL": "sqlite:////tmp/cat.db"},
 )
 
 async def run():
@@ -627,7 +627,7 @@ async def run():
 
 Most MCP-capable IDE plugins want two things: a **command to run**
 and a **set of environment variables**. Point the command at the
-same `.venv/bin/mpeg-o-mcp` full path. Everything else is the same
+same `.venv/bin/ttio-mcp` full path. Everything else is the same
 as the Claude Code wire-up.
 
 ---
@@ -637,44 +637,44 @@ as the Claude Code wire-up.
 Once the server is connected, you can ask the client to exercise it.
 A good smoke test, end to end:
 
-1. Ask the client to call `mpgo_list_files` (no arguments). You
+1. Ask the client to call `ttio_list_files` (no arguments). You
    should get `{"total": 0, "limit": 50, "offset": 0, "files": []}` —
    the catalog is empty, which is correct.
-2. Pick any `.mpgo` fixture file (the MPEG-O repo ships a few under
+2. Pick any `.mpgo` fixture file (the TTI-O repo ships a few under
    `tests/fixtures/`) and ask the client to call
-   `mpgo_register_file` with its absolute path as `uri`. You should
+   `ttio_register_file` with its absolute path as `uri`. You should
    get back a `file_id`, counts of studies/runs/identifications, and
    `was_update: false`.
-3. Call `mpgo_list_files` again — the file is now in the catalog.
-4. Call `mpgo_get_file` with the `id` you got back — full record.
-5. Call `mpgo_get_spectrum` with `{run_id, spectrum_index: 0}` — the
+3. Call `ttio_list_files` again — the file is now in the catalog.
+4. Call `ttio_get_file` with the `id` you got back — full record.
+5. Call `ttio_get_spectrum` with `{run_id, spectrum_index: 0}` — the
    server reopens the file and pulls one spectrum.
-6. If you configured a keyring, call `mpgo_encrypt_file` with
+6. If you configured a keyring, call `ttio_encrypt_file` with
    `{id, key_id: "demo"}`. The file on disk now has its intensity
-   channel ciphered. Call `mpgo_get_spectrum` again without a
+   channel ciphered. Call `ttio_get_spectrum` again without a
    `key_id` and you should get `key_required`; pass the same
    `key_id` and you get plaintext back. Finally call
-   `mpgo_decrypt_file` to restore the file.
+   `ttio_decrypt_file` to restore the file.
 7. If you have cloud credentials and want to publish a file, call
-   `mpgo_push_file` with `{local_uri: "/path/to/local.mpgo",
+   `ttio_push_file` with `{local_uri: "/path/to/local.mpgo",
    remote_uri: "s3://your-bucket/path/sample.mpgo"}` — the server
    streams the bytes up and registers the uploaded object under its
    `s3://` URI. Add `key_id: "demo"` to have the ciphertext land in
    the bucket instead of plaintext.
 8. If you added an `hmac-sha256` key to the keyring, call
-   `mpgo_sign_file` with `{id, key_id: "release-signer"}` — the
+   `ttio_sign_file` with `{id, key_id: "release-signer"}` — the
    server stamps every `signal_channels/*_values` dataset with an
-   HMAC-SHA256 tag. Call `mpgo_verify_signature` with the same key
+   HMAC-SHA256 tag. Call `ttio_verify_signature` with the same key
    and you should get `valid: true` plus a per-dataset verdict map.
    Pass a different `key_id` and `valid` flips to `false` without
    raising.
-9. If you set `MPGO_MCP_INTAKE_DIR` and the server process can reach
+9. If you set `TTIO_MCP_INTAKE_DIR` and the server process can reach
    a display (local desktop, or WSLg on Windows), ask the client to
-   call `mpgo_launch_uploader`. A file picker opens on your desktop;
+   call `ttio_launch_uploader`. A file picker opens on your desktop;
    choose any importable file (`.mpgo`, `.mzml`, `.nmrml`, `.imzml`,
    `.mztab`) and watch the progress window stream it into the intake
    directory. The tool returns `{source, destination, format,
-   size_bytes}` — follow up with `mpgo_register_file` against the
+   size_bytes}` — follow up with `ttio_register_file` against the
    `destination` to bring the staged file into the catalog.
 
 That's the full round trip. Everything else is filters, pagination,
@@ -684,7 +684,7 @@ and edge cases.
 
 The server treats cloud encryption in three tiers:
 
-1. **Fresh file, not yet uploaded.** Call `mpgo_push_file` with
+1. **Fresh file, not yet uploaded.** Call `ttio_push_file` with
    `key_id` — a temp copy is encrypted locally, the ciphertext is
    uploaded, the local source is untouched, and the catalog row is
    marked `encrypted=true`. One upload, no wasted bandwidth.
@@ -692,14 +692,14 @@ The server treats cloud encryption in three tiers:
    stores are immutable at the object level — there is no "encrypt
    in place" for a remote object. The workflow is manual:
    (a) pull the object down with your cloud client,
-   (b) run `mpgo_encrypt_file` on the local copy,
-   (c) re-upload with `mpgo_push_file` (no `key_id`, since the bytes
+   (b) run `ttio_encrypt_file` on the local copy,
+   (c) re-upload with `ttio_push_file` (no `key_id`, since the bytes
    are already ciphertext) to a new key.
 3. **File already in the cloud, plaintext reads only.** Just
-   `mpgo_register_file` the `s3://` URI and use it through the query
+   `ttio_register_file` the `s3://` URI and use it through the query
    tools. Nothing to encrypt.
 
-`mpgo_encrypt_file` and `mpgo_decrypt_file` refuse cloud URIs with
+`ttio_encrypt_file` and `ttio_decrypt_file` refuse cloud URIs with
 `remote_not_supported` on purpose — doing it server-side would cost
 a download plus an upload per call, and the server has no way to
 cache between requests.
@@ -707,9 +707,9 @@ cache between requests.
 ### Signing `.mpgo` files
 
 Signing stamps each `signal_channels/*_values` dataset with an
-HMAC-SHA256 tag (stored in the `@mpgo_signature` HDF5 attribute on
+HMAC-SHA256 tag (stored in the `@ttio_signature` HDF5 attribute on
 that dataset). Anyone who holds the matching key can later run
-`mpgo_verify_signature` to confirm that the dataset bytes have not
+`ttio_verify_signature` to confirm that the dataset bytes have not
 changed since signing.
 
 Signing is **local-only** and operates on **plaintext** values — a
@@ -719,14 +719,14 @@ canonical byte layout HMAC depends on the original plaintext values.
 
 Minimal round-trip:
 
-1. Register the file (local path): `mpgo_register_file`.
+1. Register the file (local path): `ttio_register_file`.
 2. Sign it with an `hmac-sha256` key from the keyring:
 
    ```json
    {"id": 1, "key_id": "release-signer"}
    ```
 
-   `mpgo_sign_file` responds with `signed_datasets: ["/study/.../intensity_values", ...]`
+   `ttio_sign_file` responds with `signed_datasets: ["/study/.../intensity_values", ...]`
    and fresh `file_sha256` / `content_sha256`.
 3. Verify at any later point with the same `key_id`:
 
@@ -734,25 +734,25 @@ Minimal round-trip:
    {"id": 1, "key_id": "release-signer"}
    ```
 
-   `mpgo_verify_signature` returns `valid: true` if every signed
+   `ttio_verify_signature` returns `valid: true` if every signed
    dataset verifies. Individual verdicts appear in `verified_datasets`
    — if some are `false`, those particular datasets have been
    tampered with (or are being verified with the wrong key).
 
-**Re-signing with a new key.** Call `mpgo_sign_file` again with the
-new `key_id`; the `@mpgo_signature` attribute on each dataset is
+**Re-signing with a new key.** Call `ttio_sign_file` again with the
+new `key_id`; the `@ttio_signature` attribute on each dataset is
 overwritten. There's no atomic rotate — file attributes only ever
 hold one signature, and it's always the most recent one.
 
 **Signing for cloud distribution.** Sign the local file, then
-`mpgo_push_file` (with or without encryption) to upload. Verification
+`ttio_push_file` (with or without encryption) to upload. Verification
 against a cloud URI is **not** supported — download the object
 locally, re-register, then verify. This keeps the verify path on
 byte-stable h5py reads.
 
 **Unsigned files raise a distinct error.** Calling
-`mpgo_verify_signature` on a file whose datasets carry no
-`@mpgo_signature` attributes raises `not_signed`, not `valid: false`.
+`ttio_verify_signature` on a file whose datasets carry no
+`@ttio_signature` attributes raises `not_signed`, not `valid: false`.
 Callers should treat `not_signed` as "no claim to verify" rather than
 "failed verification."
 
@@ -763,7 +763,7 @@ Callers should treat `not_signed` as "no claim to verify" rather than
 When a new version lands:
 
 ```bash
-cd ~/mpeg-o-mcp
+cd ~/ttio-mcp
 git pull
 source .venv/bin/activate
 pip install -e ".[dev]"              # re-resolves dependencies
@@ -771,7 +771,7 @@ alembic upgrade head                 # applies any new migrations
 pytest -q                            # sanity check
 ```
 
-Then restart the client — it needs to relaunch `mpeg-o-mcp` to pick
+Then restart the client — it needs to relaunch `ttio-mcp` to pick
 up the new code. In Claude Code that's usually just starting a new
 session.
 
@@ -785,13 +785,13 @@ adjust tables; they never drop rows.
 ### Single-user laptop
 
 Everything in the [Quickstart](#quickstart) — SQLite, no keyring, no
-cloud — is fine. Back up `mpeg_o_mcp.db` periodically.
+cloud — is fine. Back up `ttio_mcp.db` periodically.
 
 ### Shared team server
 
-- Move the catalog to Postgres (`MPGO_MCP_DB_URL`). One database
+- Move the catalog to Postgres (`TTIO_MCP_DB_URL`). One database
   serves everyone; each user's client launches their own
-  `mpeg-o-mcp` subprocess that connects to the shared DB.
+  `ttio-mcp` subprocess that connects to the shared DB.
 - Put the server binary on a path accessible to every user, or let
   each user clone their own copy. The code is stateless — all state
   lives in the database and the keyring.
@@ -805,7 +805,7 @@ The server speaks stdio, so a "cloud deployment" usually means one
 of:
 
 1. **Run the server on a remote host and expose it via SSH.** The
-   client SSHes in and spawns `mpeg-o-mcp` as a remote command. MCP
+   client SSHes in and spawns `ttio-mcp` as a remote command. MCP
    over SSH works fine — stdio passes through untouched.
 2. **Put it behind an MCP-over-HTTP proxy.** Several community
    proxies exist; they turn stdio into HTTP and back. Consult their
@@ -816,8 +816,8 @@ Either way, make sure:
 - The keyring file has restrictive permissions (`chmod 600`, owned
   by the user the server runs as).
 - Cloud credentials are loaded from the environment of the user
-  running `mpeg-o-mcp`, not from MCP tool arguments.
-- `MPGO_MCP_DB_URL` points at a real database with backups. The
+  running `ttio-mcp`, not from MCP tool arguments.
+- `TTIO_MCP_DB_URL` points at a real database with backups. The
   catalog is the only source of truth about which files the server
   has seen — losing it means re-hashing every file on the next
   register call.
@@ -826,19 +826,19 @@ Either way, make sure:
 
 ## Troubleshooting
 
-### "command not found: mpeg-o-mcp"
+### "command not found: ttio-mcp"
 
 The virtual environment isn't active, or it's active but in a
 different shell. Activate it:
 
 ```bash
-source ~/mpeg-o-mcp/.venv/bin/activate
+source ~/ttio-mcp/.venv/bin/activate
 ```
 
 Or invoke the binary directly:
 
 ```bash
-~/mpeg-o-mcp/.venv/bin/mpeg-o-mcp
+~/ttio-mcp/.venv/bin/ttio-mcp
 ```
 
 ### "sqlalchemy.exc.OperationalError: no such table: files"
@@ -859,7 +859,7 @@ Credentials or endpoint config aren't reaching the server. Check:
   `AWS_ACCESS_KEY_ID` (or equivalent)? MCP clients launch the
   server as a subprocess and won't forward env vars you set after
   the client started.
-- Is `MPGO_MCP_FSSPEC_KWARGS` valid JSON? The server aborts at
+- Is `TTIO_MCP_FSSPEC_KWARGS` valid JSON? The server aborts at
   startup if it isn't.
 - Does the `cloud` extra actually install in your venv?
   `python -c "import s3fs; print(s3fs.__version__)"` should print a
@@ -868,7 +868,7 @@ Credentials or endpoint config aren't reaching the server. Check:
 ### `key_required` when reading an encrypted file
 
 Expected. The catalog has `encrypted=true` for that file. Pass
-`key_id` in the `mpgo_get_spectrum` call.
+`key_id` in the `ttio_get_spectrum` call.
 
 ### `invalid_keyring`
 
@@ -888,22 +888,22 @@ Re-generate with the one-liner in [Setting up a keyring](#setting-up-a-keyring).
 A tool was given a `key_id` whose stored algorithm doesn't match the
 algorithm the tool requires. Typical triggers:
 
-- Passing an `hmac-sha256` key to `mpgo_encrypt_file`,
-  `mpgo_decrypt_file`, `mpgo_push_file`, or `mpgo_get_spectrum`
+- Passing an `hmac-sha256` key to `ttio_encrypt_file`,
+  `ttio_decrypt_file`, `ttio_push_file`, or `ttio_get_spectrum`
   (these want `AES-256-GCM`).
-- Passing an `AES-256-GCM` key to `mpgo_sign_file` or
-  `mpgo_verify_signature` (these want `hmac-sha256`).
+- Passing an `AES-256-GCM` key to `ttio_sign_file` or
+  `ttio_verify_signature` (these want `hmac-sha256`).
 
 Add a key with the right algorithm tag to the keyring and use its
 `key_id` instead — keys cannot be used across algorithms.
 
-### `mpgo_launch_uploader` returns `intake_not_configured`
+### `ttio_launch_uploader` returns `intake_not_configured`
 
-You haven't set `MPGO_MCP_INTAKE_DIR` in the shell that launched the
+You haven't set `TTIO_MCP_INTAKE_DIR` in the shell that launched the
 server. MCP clients don't forward env vars you export *after* the
 client starts. Kill the client, export the var, relaunch.
 
-### `mpgo_launch_uploader` returns `no_display`
+### `ttio_launch_uploader` returns `no_display`
 
 The host the server is running on has no display session for tkinter
 to open a window against. Typical causes:
@@ -914,24 +914,24 @@ to open a window against. Typical causes:
   or Windows 11, which ship WSLg.
 
 The uploader can't run headless by design — it's a human-in-the-loop
-tool. For automation, use `mpgo_register_file` against a URI you've
+tool. For automation, use `ttio_register_file` against a URI you've
 already staged by other means.
 
-### `mpgo_launch_uploader` returns `cancelled`
+### `ttio_launch_uploader` returns `cancelled`
 
 The user closed the file-picker without picking a file. Not an
 error — just retry when they're ready.
 
-### The client shows "mpeg-o-mcp disconnected" right after starting
+### The client shows "ttio-mcp disconnected" right after starting
 
 The server crashed during startup, probably because an env var
 points at something invalid (bad DB URL, bad fsspec JSON). Run
-`mpeg-o-mcp` directly from a shell — the traceback will print to
+`ttio-mcp` directly from a shell — the traceback will print to
 stderr:
 
 ```bash
-source ~/mpeg-o-mcp/.venv/bin/activate
-mpeg-o-mcp
+source ~/ttio-mcp/.venv/bin/activate
+ttio-mcp
 ```
 
 Press Ctrl-D to give it EOF and let it exit cleanly.
@@ -942,7 +942,7 @@ Most commonly: the git-based `mpeg-o` dependency couldn't clone
 (firewall, no internet, GitHub down). Run
 
 ```bash
-pip install --force-reinstall "mpeg-o @ git+https://github.com/DTW-Thalion/MPEG-O.git@v1.1.1#subdirectory=python"
+pip install --force-reinstall "mpeg-o @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.1.1#subdirectory=python"
 ```
 
 and watch the output for the actual error.
@@ -955,16 +955,16 @@ Clean removal:
 
 ```bash
 # 1. Remove from your MCP client (Claude Code example)
-claude mcp remove mpeg-o-mcp
+claude mcp remove ttio-mcp
 
 # 2. Delete the repo (this deletes the venv and the default SQLite catalog)
-rm -rf ~/mpeg-o-mcp
+rm -rf ~/ttio-mcp
 
 # 3. If you exported env vars in your shell profile, remove them
-# Edit ~/.bashrc / ~/.zshrc / PowerShell profile and delete the MPGO_* lines
+# Edit ~/.bashrc / ~/.zshrc / PowerShell profile and delete the TTIO_* lines
 
 # 4. If you created a keyring outside the repo, delete it
-rm -f ~/.config/mpeg-o-mcp/keyring.json
+rm -f ~/.config/ttio-mcp/keyring.json
 
 # 5. If you configured an intake dir outside the repo, delete it
 rm -rf ~/mpeg-o-intake
@@ -973,10 +973,10 @@ rm -rf ~/mpeg-o-intake
 If you used Postgres, drop the catalog database separately:
 
 ```bash
-dropdb mpeg_o_mcp
+dropdb ttio_mcp
 ```
 
-That's everything. The MPEG-O MCP Server is self-contained to those
+That's everything. The TTI-O MCP Server is self-contained to those
 paths — nothing else is installed system-wide, nothing else touches
 system registries.
 

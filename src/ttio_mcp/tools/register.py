@@ -4,8 +4,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import register_file
-from mpeg_o_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
+from ttio_mcp.catalog import register_file
+from ttio_mcp.tools._fsspec_defaults import merged_fsspec_kwargs
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -33,7 +33,7 @@ SCHEMA: dict[str, Any] = {
             "type": "object",
             "description": (
                 "Optional keyword arguments forwarded to fsspec.open for "
-                "remote URIs. Shallow-merged on top of MPGO_MCP_FSSPEC_KWARGS "
+                "remote URIs. Shallow-merged on top of TTIO_MCP_FSSPEC_KWARGS "
                 "(per-call keys win). Typical keys: anon, key, secret, profile, "
                 "client_kwargs.endpoint_url."
             ),

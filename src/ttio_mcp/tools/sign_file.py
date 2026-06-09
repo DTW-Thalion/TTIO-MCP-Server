@@ -1,4 +1,4 @@
-"""``mpgo_sign_file`` — HMAC-SHA256 dataset signatures.
+"""``ttio_sign_file`` — HMAC-SHA256 dataset signatures.
 
 Resolves a catalog entry to a local path, loads the HMAC-SHA256 key
 from the server-side keyring by ``key_id``, opens the ``.mpgo`` file
@@ -6,9 +6,9 @@ via h5py in ``r+`` mode, walks every signal-channel dataset under
 ``study/*/{ms_runs,nmr_runs}/*/signal_channels/*_values``, and calls
 :func:`mpeg_o.signatures.sign_dataset` on each.
 
-Each signed dataset gets an ``@mpgo_signature`` VL-string attribute
-whose value is prefixed with ``v2:`` (the MPEG-O canonical-form
-HMAC-SHA256 tag). The existing ``@mpgo_signature`` attribute — if any
+Each signed dataset gets an ``@ttio_signature`` VL-string attribute
+whose value is prefixed with ``v2:`` (the TTI-O canonical-form
+HMAC-SHA256 tag). The existing ``@ttio_signature`` attribute — if any
 — is replaced, so re-signing with a new key is idempotent at the
 file level.
 
@@ -29,16 +29,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import (
+from ttio_mcp.catalog import (
     CatalogError,
     InvalidURI,
     ResolveFailed,
     _resolve_as_user,
     resolve_local_path,
 )
-from mpeg_o_mcp.hashes import hash_content_sha256, hash_file_sha256
-from mpeg_o_mcp.keyring import HMAC_SHA256, Keyring
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.hashes import hash_content_sha256, hash_file_sha256
+from ttio_mcp.keyring import HMAC_SHA256, Keyring
+from ttio_mcp.tools._helpers import lookup_file
 
 SIGNATURE_ALGORITHM = HMAC_SHA256
 
@@ -51,7 +51,7 @@ SCHEMA: dict[str, Any] = {
         "key_id": {
             "type": "string",
             "description": (
-                "Keyring id resolved server-side from MPGO_KEYRING_PATH. "
+                "Keyring id resolved server-side from TTIO_KEYRING_PATH. "
                 "Must reference an hmac-sha256 key; raw bytes never cross "
                 "the MCP wire."
             ),

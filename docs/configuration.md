@@ -1,30 +1,30 @@
 # Configuration
 
 All configuration is read from the environment of the process that
-launches `mpeg-o-mcp`. The server never accepts secrets through MCP
+launches `ttio-mcp`. The server never accepts secrets through MCP
 tool arguments.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MPGO_MCP_DB_URL` | `sqlite:///mpeg_o_mcp.db` | SQLAlchemy URL for the catalog. |
-| `MPGO_MCP_FSSPEC_KWARGS` | *(unset)* | JSON object merged into every `fsspec.open` call for cloud URIs. |
-| `MPGO_KEYRING_PATH` | *(unset)* | Filesystem path to the JSON keyring used by the encryption tools. |
-| `MPGO_MCP_INTAKE_DIR` | *(unset)* | Directory where `mpgo_launch_uploader` stages files chosen by the user. |
+| `TTIO_MCP_DB_URL` | `sqlite:///ttio_mcp.db` | SQLAlchemy URL for the catalog. |
+| `TTIO_MCP_FSSPEC_KWARGS` | *(unset)* | JSON object merged into every `fsspec.open` call for cloud URIs. |
+| `TTIO_KEYRING_PATH` | *(unset)* | Filesystem path to the JSON keyring used by the encryption tools. |
+| `TTIO_MCP_INTAKE_DIR` | *(unset)* | Directory where `ttio_launch_uploader` stages files chosen by the user. |
 
 Cloud credentials (AWS, GCP, Azure) are picked up by `fsspec` / `s3fs`
 from their usual sources — env vars, profile files, IMDS, workload
 identity. The server does not read them itself.
 
-## `MPGO_MCP_DB_URL`
+## `TTIO_MCP_DB_URL`
 
 Any SQLAlchemy URL works. Common shapes:
 
 ```bash
 # Local SQLite (default)
-export MPGO_MCP_DB_URL="sqlite:///mpeg_o_mcp.db"
+export TTIO_MCP_DB_URL="sqlite:///ttio_mcp.db"
 
 # Postgres
-export MPGO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/mpeg_o_mcp"
+export TTIO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/ttio_mcp"
 ```
 
 After setting, bootstrap the schema:
@@ -38,21 +38,21 @@ catalog writes default their `registered_by` / `owner_user_id` to
 this row unless a tool call supplies `as_user` for a pre-provisioned
 name. `alembic downgrade base` reverses every migration.
 
-## `MPGO_MCP_FSSPEC_KWARGS`
+## `TTIO_MCP_FSSPEC_KWARGS`
 
 A JSON object forwarded to `fsspec.open` whenever a cloud URI is
-resolved. Per-call `fsspec_kwargs` on `mpgo_register_file` and
-`mpgo_get_spectrum` **shallow-merge on top** (per-call keys win).
+resolved. Per-call `fsspec_kwargs` on `ttio_register_file` and
+`ttio_get_spectrum` **shallow-merge on top** (per-call keys win).
 
 ```bash
 # Private S3 bucket — use the caller's default AWS credentials
-export MPGO_MCP_FSSPEC_KWARGS='{"anon": false}'
+export TTIO_MCP_FSSPEC_KWARGS='{"anon": false}'
 
 # Public bucket
-export MPGO_MCP_FSSPEC_KWARGS='{"anon": true}'
+export TTIO_MCP_FSSPEC_KWARGS='{"anon": true}'
 
 # Custom S3 endpoint (MinIO, LocalStack, etc.)
-export MPGO_MCP_FSSPEC_KWARGS='{
+export TTIO_MCP_FSSPEC_KWARGS='{
   "anon": false,
   "client_kwargs": {"endpoint_url": "https://minio.example:9000"}
 }'
@@ -67,10 +67,10 @@ Supported cloud schemes (anything
 the `cloud` extra (`pip install -e ".[cloud]"`) to pull in `s3fs`
 and `fsspec`.
 
-## `MPGO_KEYRING_PATH`
+## `TTIO_KEYRING_PATH`
 
-Path to the JSON keyring used by `mpgo_encrypt_file`,
-`mpgo_decrypt_file`, and encrypted reads via `mpgo_get_spectrum`.
+Path to the JSON keyring used by `ttio_encrypt_file`,
+`ttio_decrypt_file`, and encrypted reads via `ttio_get_spectrum`.
 
 Missing file = empty keyring; the error only surfaces when a tool
 looks up a specific `key_id`. No keyring at all (env unset) means
@@ -104,11 +104,11 @@ Rules:
   per-algorithm (see below).
 - `algorithm` defaults to `AES-256-GCM`. Two algorithms are supported:
   - `AES-256-GCM` — bulk encryption; key must decode to exactly 32 bytes.
-    Used by `mpgo_encrypt_file`, `mpgo_decrypt_file`, `mpgo_push_file`,
+    Used by `ttio_encrypt_file`, `ttio_decrypt_file`, `ttio_push_file`,
     and encrypted-`get_spectrum` reads.
   - `hmac-sha256` — dataset signing; key must decode to at least 1 byte
-    (32 bytes is conventional). Used by `mpgo_sign_file` and
-    `mpgo_verify_signature`.
+    (32 bytes is conventional). Used by `ttio_sign_file` and
+    `ttio_verify_signature`.
   Any other value raises `invalid_keyring`. Each tool pins the
   algorithm it expects, so a key tagged for one algorithm cannot be
   used with the other (`algorithm_mismatch`).
@@ -126,17 +126,17 @@ Drop the output into `value`. Never commit the keyring file.
 ### Keys never cross the MCP wire
 
 Tool callers pass a `key_id`; the server resolves it to raw bytes
-in-process via `mpeg_o_mcp.keyring.Keyring.get`. Responses carry only
+in-process via `ttio_mcp.keyring.Keyring.get`. Responses carry only
 the `key_id` string.
 
-## `MPGO_MCP_INTAKE_DIR`
+## `TTIO_MCP_INTAKE_DIR`
 
-Destination directory for files staged through `mpgo_launch_uploader`.
+Destination directory for files staged through `ttio_launch_uploader`.
 Required before the tool can run — absent configuration surfaces as
 the `intake_not_configured` error.
 
 ```bash
-export MPGO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
+export TTIO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
 ```
 
 When a file is chosen, the uploader copies it into this directory
@@ -159,8 +159,8 @@ tools for those workflows.
 ## Transport
 
 stdio only. Config knobs for the MCP transport itself live in
-whatever launches the server — `claude mcp add mpeg-o-mcp -- mpeg-o-mcp`
-and equivalents. The server name (`mpeg-o-mcp`) and version (from
-`mpeg_o_mcp.__version__`) are reported in the `initialize` response.
+whatever launches the server — `claude mcp add ttio-mcp -- ttio-mcp`
+and equivalents. The server name (`ttio-mcp`) and version (from
+`ttio_mcp.__version__`) are reported in the `initialize` response.
 MCP-over-HTTP and SSE are not implemented; run the server over SSH
 or an external stdio↔HTTP proxy if you need remote access.

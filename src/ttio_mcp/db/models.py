@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.x declarative schema for the MPEG-O MCP catalog.
+"""SQLAlchemy 2.x declarative schema for the TTI-O MCP catalog.
 
 Uses portable JSON and DateTime(timezone=True) columns so the same
 models run against SQLite (v0.1) and Postgres (future). The column

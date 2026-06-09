@@ -1,12 +1,12 @@
-"""``mpgo_launch_uploader`` — spawn the local GUI uploader.
+"""``ttio_launch_uploader`` — spawn the local GUI uploader.
 
 The server and MCP client run on the same machine (stdio transport),
 so the server can launch a tkinter file-picker on the user's desktop.
-The picker copies the chosen file into ``MPGO_MCP_INTAKE_DIR`` and
+The picker copies the chosen file into ``TTIO_MCP_INTAKE_DIR`` and
 emits a single JSON line to stdout, which this handler parses and
 returns to the caller.
 
-No catalog rows are written here — a subsequent ``mpgo_register_file``
+No catalog rows are written here — a subsequent ``ttio_register_file``
 call (pointing at the returned ``destination``) is still required to
 bring the file into the catalog.
 """
@@ -19,8 +19,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import CatalogError
-from mpeg_o_mcp.uploader.core import get_intake_dir
+from ttio_mcp.catalog import CatalogError
+from ttio_mcp.uploader.core import get_intake_dir
 
 DEFAULT_TIMEOUT_SECONDS = 600
 
@@ -47,14 +47,14 @@ async def handle(session: Session, args: dict[str, Any]) -> dict[str, Any]:
     intake_dir = get_intake_dir()
     if intake_dir is None:
         raise CatalogError(
-            "MPGO_MCP_INTAKE_DIR is not set — the server has no configured "
+            "TTIO_MCP_INTAKE_DIR is not set — the server has no configured "
             "destination for uploaded files.",
             code="intake_not_configured",
         )
 
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "mpeg_o_mcp.uploader"],
+            [sys.executable, "-m", "ttio_mcp.uploader"],
             capture_output=True,
             text=True,
             timeout=timeout,

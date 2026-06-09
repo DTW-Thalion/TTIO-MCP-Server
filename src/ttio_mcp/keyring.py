@@ -1,7 +1,7 @@
 """JSON-file-backed keyring for symmetric cryptographic keys.
 
 The keyring is a flat JSON file whose path is controlled by
-``MPGO_KEYRING_PATH``. Keys are stored as base64-encoded bytes alongside
+``TTIO_KEYRING_PATH``. Keys are stored as base64-encoded bytes alongside
 metadata (``algorithm``, ``created_at``, optional ``description``).
 
 Listing the keyring returns metadata only — the key value is never
@@ -124,7 +124,7 @@ class Keyring:
 
     @classmethod
     def from_env(cls) -> Keyring:
-        raw = os.environ.get("MPGO_KEYRING_PATH", "").strip()
+        raw = os.environ.get("TTIO_KEYRING_PATH", "").strip()
         if not raw:
             return cls(None)
         return cls(Path(raw).expanduser())
@@ -179,7 +179,7 @@ class Keyring:
     def get(self, key_id: str, *, expected_algorithm: str | None = None) -> bytes:
         """Resolve ``key_id`` to raw key bytes.
 
-        Raises :class:`KeyringNotConfigured` if no ``MPGO_KEYRING_PATH``
+        Raises :class:`KeyringNotConfigured` if no ``TTIO_KEYRING_PATH``
         is set, :class:`KeyNotFound` if the id is absent,
         :class:`InvalidKeyring` for malformed entries, and
         :class:`AlgorithmMismatch` if ``expected_algorithm`` is supplied
@@ -187,7 +187,7 @@ class Keyring:
         """
         if self._path is None:
             raise KeyringNotConfigured(
-                "no keyring configured; set MPGO_KEYRING_PATH"
+                "no keyring configured; set TTIO_KEYRING_PATH"
             )
         self._ensure_loaded()
         entry = self._entries.get(key_id)
@@ -234,7 +234,7 @@ class Keyring:
         """Return the algorithm tag for ``key_id`` without reading the bytes."""
         if self._path is None:
             raise KeyringNotConfigured(
-                "no keyring configured; set MPGO_KEYRING_PATH"
+                "no keyring configured; set TTIO_KEYRING_PATH"
             )
         self._ensure_loaded()
         entry = self._entries.get(key_id)

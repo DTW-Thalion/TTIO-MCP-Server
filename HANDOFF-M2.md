@@ -1,4 +1,4 @@
-# HANDOFF-M2.md — MPEG-O-MCP M2: Catalog & File Registration
+# HANDOFF-M2.md — TTI-O-MCP M2: Catalog & File Registration
 
 ## Context
 
@@ -12,12 +12,12 @@ binding decisions (auth, secrets, extraction policy, tool granularity).
 
 ## M2 Scope
 
-- **Checksum helpers** (`mpeg_o_mcp.hashes`). Stream the whole file for
+- **Checksum helpers** (`ttio_mcp.hashes`). Stream the whole file for
   `file_sha256`. `content_sha256` is an alias for `file_sha256` in M2;
   true content-semantic hashing (stable under timestamp / signature
   attribute churn) is deferred to a later milestone. Column stays for
   forward compat.
-- **Extractor** (`mpeg_o_mcp.catalog`). Open a file through
+- **Extractor** (`ttio_mcp.catalog`). Open a file through
   `mpeg_o.SpectralDataset.open`, harvest `title`,
   `isa_investigation_id`, `feature_flags`, MS/NMR runs with acquisition
   mode + instrument metadata, identifications, dataset-level
@@ -25,13 +25,13 @@ binding decisions (auth, secrets, extraction policy, tool granularity).
   `identifications`, `provenance_records` in **one transaction** per
   `register` call.
 - **Four MCP tools**, one per concept (no tool sprawl):
-  1. `mpgo_register_file(uri, display_name?, as_user?)` — resolve →
+  1. `ttio_register_file(uri, display_name?, as_user?)` — resolve →
      hash → open → extract → insert. Idempotent on `uri`: re-register
      updates the file row + replaces child rows atomically.
-  2. `mpgo_list_files(limit?, offset?, title_contains?, acquisition_mode?)`
+  2. `ttio_list_files(limit?, offset?, title_contains?, acquisition_mode?)`
      — paginated catalog listing with light filters.
-  3. `mpgo_get_file(id_or_uri)` — full file record + child counts.
-  4. `mpgo_reverify(id_or_uri)` — re-hash the referenced bytes and
+  3. `ttio_get_file(id_or_uri)` — full file record + child counts.
+  4. `ttio_reverify(id_or_uri)` — re-hash the referenced bytes and
      update `last_verified_at`; flag drift if `file_sha256` changed.
 - **Local URIs only**: `file://` and bare paths. `s3://` / `https://`
   land in M4 with the secrets work.
@@ -53,7 +53,7 @@ binding decisions (auth, secrets, extraction policy, tool granularity).
 ## Package Layout (new/changed in M2)
 
 ```
-src/mpeg_o_mcp/
+src/ttio_mcp/
 ├── hashes.py                # NEW — file_sha256 / content_sha256 helpers
 ├── catalog.py               # NEW — register_file + extract helpers
 ├── tools/
@@ -77,7 +77,7 @@ Each tool:
 - Accepts an optional `as_user` argument (no-op pending M4 auth —
   documented in each schema).
 
-### `mpgo_register_file`
+### `ttio_register_file`
 
 ```json
 {
@@ -104,7 +104,7 @@ Response `data`:
 }
 ```
 
-### `mpgo_list_files`
+### `ttio_list_files`
 
 ```json
 {
@@ -118,11 +118,11 @@ Response `data`:
 }
 ```
 
-### `mpgo_get_file`
+### `ttio_get_file`
 
 Accepts exactly one of `id` (integer) or `uri` (string).
 
-### `mpgo_reverify`
+### `ttio_reverify`
 
 Same input as `get_file`. Response includes `drift` boolean.
 
@@ -133,7 +133,7 @@ Tool handlers return `{"ok": false, "error": {"code", "message"}}`:
 - `not_found` — no file row matches.
 - `invalid_uri` — scheme not supported in M2.
 - `resolve_failed` — path doesn't exist / can't read.
-- `not_mpgo` — file isn't a valid `.mpgo` (MPEG-O raises on open).
+- `not_mpgo` — file isn't a valid `.mpgo` (TTI-O raises on open).
 - `duplicate_uri` — race on registration (shouldn't happen with
   upsert; defensive).
 - `internal` — fallback; carries truncated exception repr.
@@ -143,14 +143,14 @@ protocol-level error and the user loses the structured code.
 
 ## Acceptance Checklist
 
-- [ ] `mpgo_register_file` round-trips a `write_minimal` fixture:
+- [ ] `ttio_register_file` round-trips a `write_minimal` fixture:
       row in `files`, matching `studies` / `runs` / `identifications` /
       `provenance_records`, `format_version` is correct.
 - [ ] Re-registering the same URI updates in place; children replaced
       atomically; no duplicate rows.
-- [ ] `mpgo_list_files` paginates and filters.
-- [ ] `mpgo_get_file` returns counts matching the DB.
-- [ ] `mpgo_reverify` marks `last_verified_at`, sets `drift=false` on
+- [ ] `ttio_list_files` paginates and filters.
+- [ ] `ttio_get_file` returns counts matching the DB.
+- [ ] `ttio_reverify` marks `last_verified_at`, sets `drift=false` on
       an unchanged file, `drift=true` when the file bytes change.
 - [ ] `pytest -q` 100% green, at least one test per tool + one
       round-trip + one idempotency test.

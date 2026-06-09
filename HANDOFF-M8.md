@@ -1,4 +1,4 @@
-# HANDOFF-M8.md — MPEG-O-MCP M8: MCP Conformance Suite
+# HANDOFF-M8.md — TTI-O-MCP M8: MCP Conformance Suite
 
 ## Context
 
@@ -10,16 +10,16 @@ correctly: no `initialize` handshake over stdio, no JSON-RPC envelope
 on the wire, no `tools/list` shape check against what the SDK serves.
 
 M8 closes that gap. The new conformance suite spawns the real
-`mpeg-o-mcp` subprocess and drives it with the `mcp` Python client
+`ttio-mcp` subprocess and drives it with the `mcp` Python client
 SDK — the same entry point a Claude Code or custom MCP client would
 use. Every existing test still runs in-process (fast, granular); the
 M8 tests add end-to-end validation across the full MCP wire.
 
 The originally-planned M8 ("Conformance + publish to TestPyPI") has
 been **split**. M8 covers conformance only; a separate M9 will pick
-up the TestPyPI publish workflow once MPEG-O ships PyPI wheels
-(tracked as MPEG-O M40). PyPI rejects wheels that declare git-URL
-dependencies, and MPEG-O is currently pulled from a git tag, so
+up the TestPyPI publish workflow once TTI-O ships PyPI wheels
+(tracked as TTI-O M40). PyPI rejects wheels that declare git-URL
+dependencies, and TTI-O is currently pulled from a git tag, so
 publishing today would mean either TestPyPI-only or restructuring
 the dependency.
 
@@ -37,8 +37,8 @@ the dependency.
   using `mcp.client.stdio.stdio_client` + `mcp.ClientSession` against
   a freshly-spawned subprocess. The subprocess command resolution
   mirrors the existing `tests/test_initialize.py` pattern: prefer
-  `shutil.which("mpeg-o-mcp")`; fall back to
-  `sys.executable -m mpeg_o_mcp.server` (the module already has
+  `shutil.which("ttio-mcp")`; fall back to
+  `sys.executable -m ttio_mcp.server` (the module already has
   `__name__ == "__main__"` guarding `main()`).
 - **Initialize + `list_tools` surface.** Verifies the exact set of 13
   tool names, and checks each tool's `inputSchema` is an object with
@@ -56,14 +56,14 @@ the dependency.
   plaintext; reverify after sign to cover the drift-detection happy
   path (catalog hashes get refreshed as part of `sign_file`, so
   `drift=false` is the expected outcome).
-- **`mpgo_push_file` (13th tool).** A separate test reuses the
+- **`ttio_push_file` (13th tool).** A separate test reuses the
   shared `moto_s3_server` session fixture from `tests/_cloud.py`
   (skipped when `moto.server`, `flask`, or `s3fs` aren't
-  installed). The subprocess receives `MPGO_MCP_FSSPEC_KWARGS` with
+  installed). The subprocess receives `TTIO_MCP_FSSPEC_KWARGS` with
   the moto endpoint URL and fake credentials so it can write to the
   bucket without real AWS access.
 - **Error envelope on the wire.** One negative-path test calls
-  `mpgo_get_file` with a bogus `id` and parses the TextContent body;
+  `ttio_get_file` with a bogus `id` and parses the TextContent body;
   asserts `{"ok": false, "error": {"code": "not_found", "message":
   "...999..."}}`. This nails down the serialised error shape — in-
   process tests catch exceptions, not JSON strings.
@@ -107,14 +107,14 @@ the versions we pin.
 
 ## Acceptance Checklist
 
-- [x] `tests/test_m8_conformance.py` runs `mpeg-o-mcp` as a real
+- [x] `tests/test_m8_conformance.py` runs `ttio-mcp` as a real
       subprocess via `stdio_client` / `ClientSession`.
 - [x] `test_conformance_initialize_and_list_tools` — asserts exact
       13-name tool set and schema-object shape for every tool.
 - [x] `test_conformance_local_tools_round_trip` — exercises 12 of 13
       tools in a stateful sequence on one subprocess.
 - [x] `test_conformance_push_file` — exercises the 13th tool
-      (`mpgo_push_file`) against the moto S3 fixture. Skips cleanly
+      (`ttio_push_file`) against the moto S3 fixture. Skips cleanly
       when cloud extras are missing (only one `importorskip` on
       `s3fs`; the session-scoped `moto_s3_server` fixture already
       imports the rest).
@@ -125,7 +125,7 @@ the versions we pin.
       M8). On a machine without cloud extras the push-file test
       skips and the rest pass — suite stays green.
 - [x] CHANGELOG entry under `[0.8.0.dev0]`. Version bump in
-      `pyproject.toml` and `src/mpeg_o_mcp/__init__.py`.
+      `pyproject.toml` and `src/ttio_mcp/__init__.py`.
 - [x] README milestone table splits the original "M8: Conformance +
       publish" row into M8 (shipped) and M9 (planned, TestPyPI).
 

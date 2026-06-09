@@ -5,8 +5,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import CatalogError, NotFound, resolve_uri
-from mpeg_o_mcp.db.models import File
+from ttio_mcp.catalog import CatalogError, NotFound, resolve_uri
+from ttio_mcp.db.models import File
 
 
 def lookup_file(session: Session, *, id_or_uri: dict[str, Any]) -> File:

@@ -5,9 +5,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.catalog import ResolveFailed, resolve_local_path
-from mpeg_o_mcp.hashes import hash_file_sha256
-from mpeg_o_mcp.tools._helpers import lookup_file
+from ttio_mcp.catalog import ResolveFailed, resolve_local_path
+from ttio_mcp.hashes import hash_file_sha256
+from ttio_mcp.tools._helpers import lookup_file
 
 SCHEMA: dict[str, Any] = {
     "type": "object",

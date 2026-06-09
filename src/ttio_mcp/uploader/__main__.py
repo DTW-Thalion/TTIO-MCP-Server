@@ -1,4 +1,4 @@
-"""Entry point for ``python -m mpeg_o_mcp.uploader``.
+"""Entry point for ``python -m ttio_mcp.uploader``.
 
 The server spawns this module as a child process, reads a single JSON
 line from its stdout, and returns the payload to the MCP caller. Exit
@@ -6,7 +6,7 @@ codes:
 
 - ``0`` — user picked a file and it was copied into the intake dir.
 - ``2`` — user cancelled the picker.
-- ``3`` — configuration error (``MPGO_MCP_INTAKE_DIR`` unset, etc.).
+- ``3`` — configuration error (``TTIO_MCP_INTAKE_DIR`` unset, etc.).
 - ``4`` — runtime error during the copy.
 
 Exit code is a *hint*; the authoritative result is the JSON body on
@@ -20,7 +20,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from mpeg_o_mcp.uploader.core import (
+from ttio_mcp.uploader.core import (
     detect_format,
     get_intake_dir,
 )
@@ -41,13 +41,13 @@ def main() -> int:
         _emit(
             _error(
                 "intake_not_configured",
-                "MPGO_MCP_INTAKE_DIR is not set on the server process.",
+                "TTIO_MCP_INTAKE_DIR is not set on the server process.",
             )
         )
         return 3
 
     try:
-        from mpeg_o_mcp.uploader.gui import (
+        from ttio_mcp.uploader.gui import (
             copy_to_intake_with_progress,
             pick_file,
         )

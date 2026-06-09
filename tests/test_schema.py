@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlalchemy as sa
 from sqlalchemy import inspect
 
-from mpeg_o_mcp.db import File, Identification, ProvenanceRecord, Run, Study, User
+from ttio_mcp.db import File, Identification, ProvenanceRecord, Run, Study, User
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -80,7 +80,7 @@ def _run_alembic(db_url: str, *args: str) -> subprocess.CompletedProcess:
         cwd=REPO_ROOT,
         env={
             "PATH": __import__("os").environ["PATH"],
-            "MPGO_MCP_DB_URL": db_url,
+            "TTIO_MCP_DB_URL": db_url,
         },
         capture_output=True,
         text=True,

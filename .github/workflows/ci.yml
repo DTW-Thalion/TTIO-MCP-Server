@@ -6,7 +6,7 @@ on:
 
 env:
   MPEG_O_TAG: v1.1.1
-  MPEG_O_REPO: DTW-Thalion/MPEG-O
+  MPEG_O_REPO: DTW-Thalion/TTI-O
 
 jobs:
   test:
@@ -19,13 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve MPEG-O tag SHA
+      - name: Resolve TTI-O tag SHA
         id: mpeg_o_sha
         run: |
           SHA=$(git ls-remote "https://github.com/${MPEG_O_REPO}.git" "refs/tags/${MPEG_O_TAG}" | cut -f1)
           if [ -z "$SHA" ]; then echo "failed to resolve ${MPEG_O_TAG}" >&2; exit 1; fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "MPEG-O ${MPEG_O_TAG} -> $SHA"
+          echo "TTI-O ${MPEG_O_TAG} -> $SHA"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -35,7 +35,7 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
 
-      - name: Cache pip wheel directory (keyed on MPEG-O tag SHA)
+      - name: Cache pip wheel directory (keyed on TTI-O tag SHA)
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -54,7 +54,7 @@ jobs:
 
       - name: Alembic round-trip
         env:
-          MPGO_MCP_DB_URL: sqlite:///./ci.db
+          TTIO_MCP_DB_URL: sqlite:///./ci.db
         run: |
           alembic upgrade head
           alembic downgrade base

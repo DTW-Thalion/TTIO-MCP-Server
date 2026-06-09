@@ -1,4 +1,4 @@
-"""M6: ``mpgo_push_file`` round-trip against a ThreadedMotoServer S3 endpoint.
+"""M6: ``ttio_push_file`` round-trip against a ThreadedMotoServer S3 endpoint.
 
 Skipped unless the optional cloud deps (moto, flask, s3fs, boto3) are
 present. Covers plaintext push, encrypt-on-push, scheme validation,
@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from mpeg_o_mcp.catalog import ResolveFailed
-from mpeg_o_mcp.hashes import hash_file_sha256
-from mpeg_o_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, KeyNotFound, Keyring
-from mpeg_o_mcp.tools.get_file import handle as handle_get_file
-from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
-from mpeg_o_mcp.tools.push_file import SchemeNotWritable
-from mpeg_o_mcp.tools.push_file import handle as handle_push
+from ttio_mcp.catalog import ResolveFailed
+from ttio_mcp.hashes import hash_file_sha256
+from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, KeyNotFound, Keyring
+from ttio_mcp.tools.get_file import handle as handle_get_file
+from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
+from ttio_mcp.tools.push_file import SchemeNotWritable
+from ttio_mcp.tools.push_file import handle as handle_push
 from tests._cloud import s3_fsspec_kwargs
 from tests._fixtures import build_ms_fixture
 
@@ -131,7 +131,7 @@ def test_push_encrypted_to_s3(
 
     # Reading the encrypted spectrum through the remote URI works when the
     # same key_id is supplied — proves the ciphertext is actually a valid
-    # MPEG-O-encrypted object.
+    # TTI-O-encrypted object.
     spec = _run(
         handle_get_spec(
             session,

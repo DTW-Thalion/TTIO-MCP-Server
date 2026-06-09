@@ -38,10 +38,10 @@ def main() -> int:
     print(f"intake dir: {intake}", file=sys.stderr)
 
     env = os.environ.copy()
-    env["MPGO_MCP_INTAKE_DIR"] = str(intake)
+    env["TTIO_MCP_INTAKE_DIR"] = str(intake)
 
     proc = subprocess.run(
-        [sys.executable, "-m", "mpeg_o_mcp.uploader"],
+        [sys.executable, "-m", "ttio_mcp.uploader"],
         capture_output=True,
         text=True,
         env=env,

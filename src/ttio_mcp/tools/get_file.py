@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from mpeg_o_mcp.tools._helpers import file_to_dict, lookup_file
+from ttio_mcp.tools._helpers import file_to_dict, lookup_file
 
 SCHEMA: dict[str, Any] = {
     "type": "object",

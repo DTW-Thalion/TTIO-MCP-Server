@@ -1,4 +1,4 @@
-from mpeg_o_mcp.db.models import (
+from ttio_mcp.db.models import (
     Base,
     File,
     Identification,
@@ -7,7 +7,7 @@ from mpeg_o_mcp.db.models import (
     Study,
     User,
 )
-from mpeg_o_mcp.db.session import make_engine, make_session_factory
+from ttio_mcp.db.session import make_engine, make_session_factory
 
 __all__ = [
     "Base",
