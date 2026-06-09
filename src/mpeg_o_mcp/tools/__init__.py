@@ -32,6 +32,8 @@ from mpeg_o_mcp.tools.get_run import SCHEMA as GET_RUN_SCHEMA
 from mpeg_o_mcp.tools.get_run import handle as handle_get_run
 from mpeg_o_mcp.tools.get_spectrum import SCHEMA as GET_SPEC_SCHEMA
 from mpeg_o_mcp.tools.get_spectrum import handle as handle_get_spec
+from mpeg_o_mcp.tools.launch_uploader import SCHEMA as LAUNCH_UPLOADER_SCHEMA
+from mpeg_o_mcp.tools.launch_uploader import handle as handle_launch_uploader
 from mpeg_o_mcp.tools.list_files import SCHEMA as LIST_SCHEMA
 from mpeg_o_mcp.tools.list_files import handle as handle_list
 from mpeg_o_mcp.tools.push_file import SCHEMA as PUSH_SCHEMA
@@ -147,6 +149,15 @@ TOOLS: list[tuple[str, str, dict[str, Any], Handler]] = [
         "aggregate valid flag. Local files only.",
         VERIFY_SIG_SCHEMA,
         handle_verify_sig,
+    ),
+    (
+        "mpgo_launch_uploader",
+        "Spawn a local tkinter file-picker on the user's desktop so they can stage "
+        "a binary file (mzML / nmrML / imzML / mzTab / .mpgo) into the server's "
+        "MPGO_MCP_INTAKE_DIR. Returns the destination path; a separate "
+        "mpgo_register_file call is still needed to add the file to the catalog.",
+        LAUNCH_UPLOADER_SCHEMA,
+        handle_launch_uploader,
     ),
 ]
 

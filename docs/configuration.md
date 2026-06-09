@@ -9,6 +9,7 @@ tool arguments.
 | `MPGO_MCP_DB_URL` | `sqlite:///mpeg_o_mcp.db` | SQLAlchemy URL for the catalog. |
 | `MPGO_MCP_FSSPEC_KWARGS` | *(unset)* | JSON object merged into every `fsspec.open` call for cloud URIs. |
 | `MPGO_KEYRING_PATH` | *(unset)* | Filesystem path to the JSON keyring used by the encryption tools. |
+| `MPGO_MCP_INTAKE_DIR` | *(unset)* | Directory where `mpgo_launch_uploader` stages files chosen by the user. |
 
 Cloud credentials (AWS, GCP, Azure) are picked up by `fsspec` / `s3fs`
 from their usual sources — env vars, profile files, IMDS, workload
@@ -99,10 +100,18 @@ Rules:
 
 - Top level must be an object with a `keys` object.
 - Each entry must be an object with a string `value`.
-- `value` must decode as exactly 32 bytes of base64. Anything else
-  raises `invalid_keyring`.
-- `algorithm` defaults to `AES-256-GCM`; only that algorithm is
-  currently supported. Other values raise `invalid_keyring`.
+- `value` must decode as valid base64. Length rules are
+  per-algorithm (see below).
+- `algorithm` defaults to `AES-256-GCM`. Two algorithms are supported:
+  - `AES-256-GCM` — bulk encryption; key must decode to exactly 32 bytes.
+    Used by `mpgo_encrypt_file`, `mpgo_decrypt_file`, `mpgo_push_file`,
+    and encrypted-`get_spectrum` reads.
+  - `hmac-sha256` — dataset signing; key must decode to at least 1 byte
+    (32 bytes is conventional). Used by `mpgo_sign_file` and
+    `mpgo_verify_signature`.
+  Any other value raises `invalid_keyring`. Each tool pins the
+  algorithm it expects, so a key tagged for one algorithm cannot be
+  used with the other (`algorithm_mismatch`).
 - `created_at` and `description` are metadata only — they surface
   through the keyring's listing API but never through tool responses.
 
@@ -120,9 +129,38 @@ Tool callers pass a `key_id`; the server resolves it to raw bytes
 in-process via `mpeg_o_mcp.keyring.Keyring.get`. Responses carry only
 the `key_id` string.
 
+## `MPGO_MCP_INTAKE_DIR`
+
+Destination directory for files staged through `mpgo_launch_uploader`.
+Required before the tool can run — absent configuration surfaces as
+the `intake_not_configured` error.
+
+```bash
+export MPGO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
+```
+
+When a file is chosen, the uploader copies it into this directory
+using the source filename. If a file with that name already exists, a
+UTC timestamp is inserted before the extension
+(`sample.mpgo` → `sample-20260424T120000Z.mpgo`); repeat collisions
+add an integer counter. The original on disk is never modified.
+
+The directory is auto-created on first write (server-side), so it's
+safe to point at a path that doesn't yet exist. Only the server
+process needs access — the tkinter picker runs in a subprocess that
+inherits the server's environment.
+
+Since the uploader opens a tkinter window, the server must run on a
+host with a display (the same machine as the MCP client, which is the
+normal stdio deployment). Headless deployments (containers, SSH
+without X11) will get `no_display` back — keep the catalog import
+tools for those workflows.
+
 ## Transport
 
-stdio only in v0.1. Config knobs for the MCP transport itself live in
+stdio only. Config knobs for the MCP transport itself live in
 whatever launches the server — `claude mcp add mpeg-o-mcp -- mpeg-o-mcp`
 and equivalents. The server name (`mpeg-o-mcp`) and version (from
 `mpeg_o_mcp.__version__`) are reported in the `initialize` response.
+MCP-over-HTTP and SSE are not implemented; run the server over SSH
+or an external stdio↔HTTP proxy if you need remote access.

@@ -1,6 +1,6 @@
 # Tool reference
 
-The server registers 13 MCP tools. All responses use the envelope:
+The server registers 14 MCP tools. All responses use the envelope:
 
 ```jsonc
 // success
@@ -475,6 +475,57 @@ pass. Reserve `verify_failed` for actual I/O / HDF5 errors.
 
 ---
 
+## Local intake
+
+### `mpgo_launch_uploader`
+
+Spawn a local tkinter file-picker on the same machine as the server
+and copy the user's chosen file into `MPGO_MCP_INTAKE_DIR`. Useful
+when a human wants to stage a binary file (mzML / nmrML / imzML /
+mzTab / `.mpgo`) without pasting bytes through the chat or
+prearranging a URI.
+
+The server and MCP client share a host (stdio transport), so the
+server can open a tkinter window on the user's desktop. The picker
+runs in its own subprocess and emits a single JSON line to stdout;
+this tool parses that payload and returns it to the caller.
+
+Once the user picks a file, a determinate progress window shows
+percentage and MiB-copied as the chosen file streams into the intake
+directory in 1 MiB chunks. The progress bar is driven from a worker
+thread so the UI stays responsive on large files; partial destination
+files are cleaned up if the copy raises mid-stream.
+
+This tool **does not** write catalog rows. Call `mpgo_register_file`
+against the returned `destination` to bring the file into the catalog.
+
+**Input**
+
+| Field | Type | Notes |
+|---|---|---|
+| `timeout_seconds` | integer | 1–3600. Default 600. How long to wait for the user to pick a file. |
+
+**Success data**
+
+```json
+{
+  "intake_dir": "/srv/mpeg-o/intake",
+  "source": "/home/alice/downloads/sample.mzML",
+  "destination": "/srv/mpeg-o/intake/sample.mzML",
+  "format": "mzml",
+  "size_bytes": 412314
+}
+```
+
+`format` is `null` when the extension doesn't match a known importable
+format — the file is still copied; the import step will decide whether
+it can convert it.
+
+**Errors:** `intake_not_configured`, `cancelled`, `no_display`,
+`timeout`, `upload_failed`.
+
+---
+
 ## Error codes
 
 Stable strings emitted in `error.code`. Codes are grouped by origin.
@@ -508,6 +559,10 @@ Stable strings emitted in `error.code`. Codes are grouped by origin.
 | `verify_failed` | `verify_signature` | MPEG-O / h5py raised while walking or verifying datasets. |
 | `nothing_to_sign` | `sign_file` | No `signal_channels/*_values` datasets found to sign. |
 | `not_signed` | `verify_signature` | File has no datasets with an `@mpgo_signature` attribute. |
+| `intake_not_configured` | `launch_uploader` | `MPGO_MCP_INTAKE_DIR` unset on the server process. |
+| `cancelled` | `launch_uploader` | User closed the file picker without choosing a file. |
+| `no_display` | `launch_uploader` | tkinter couldn't open a window (no `$DISPLAY`, headless host). |
+| `timeout` | `launch_uploader` | User didn't pick a file within `timeout_seconds`. |
 
 ### Keyring
 
