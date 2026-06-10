@@ -4,6 +4,53 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-06-10
+
+### Changed
+- **Full rewrite: local `.tio`-file catalog → non-admin workbench client.**
+  The server is now a regular client of `tti-workbench-server`. It holds a
+  session token in memory (never on disk), calls the workbench REST/WebSocket
+  API, and no longer manages any local database, migration files, or keyring.
+  - Removed: SQLAlchemy schema, Alembic migrations, `catalog` module, JSON
+    keyring, `uploader` module, `signing` module, fsspec cloud-push, all
+    `sqlite`/`postgres` dependencies, `TTIO_MCP_DB_URL`, `TTIO_KEYRING_PATH`,
+    `TTIO_MCP_INTAKE_DIR`, `TTIO_MCP_FSSPEC_KWARGS`.
+  - Dependency swap: `mpeg-o @ git+...` replaced by `ttio[network,crypto]`
+    (PyPI wheel, includes workbench client SDK).
+  - New env vars: `TTIO_WB_URL`, `TTIO_WB_TOKEN`, `TTIO_WB_USERNAME`,
+    `TTIO_MCP_EXPORT_DIR`, `TTIO_MCP_CACHE_DIR`, `TTIO_MCP_PAGE_SIZE`.
+  - Auth: interactive `ttio_login(username, password, totp, url=None)` OR
+    headless auto-connect via `TTIO_WB_URL` + `TTIO_WB_TOKEN` at startup.
+    Tokens are held in memory only.
+
+### Added
+- **28 tools** across seven domains replacing the old 14-tool catalog surface:
+  - *Auth (4)*: `ttio_login`, `ttio_whoami`, `ttio_logout`,
+    `ttio_connection_status`.
+  - *Containers (4)*: `ttio_containers_list`, `ttio_container_get`,
+    `ttio_container_layers`, `ttio_container_manifest`.
+  - *Cohorts (2)*: `ttio_cohort_query` (JSON predicate tree),
+    `ttio_cohort_preview_count`.
+  - *Jobs / Pipelines (7)*: `ttio_job_submit`, `ttio_jobs_list`,
+    `ttio_job_get`, `ttio_job_cancel`, `ttio_job_events`,
+    `ttio_pipelines_list`, `ttio_pipeline_get`.
+  - *Sessions (5)*: `ttio_session_create`, `ttio_sessions_list`,
+    `ttio_session_get`, `ttio_session_terminate`, `ttio_session_attach_url`.
+  - *Transfers (3)*: `ttio_upload`, `ttio_download`, `ttio_federation_peers`.
+    Transfer encryption modes: `plain` | `byok` (AES-256-GCM, caller key) |
+    `server-kek` (HSM-wrapped DEK) | `pqc` (ML-KEM-1024, preview-gated).
+  - *Data (3)*: `ttio_dataset_summary`, `ttio_dataset_read`,
+    `ttio_dataset_export` — operate on a local `.tio` file; summaries inline,
+    full arrays exported as parquet/csv/json to `TTIO_MCP_EXPORT_DIR`.
+- Admin capabilities (user management, groups, operations dashboard, KEK
+  rotation, pipeline registration) and container delete are intentionally
+  not exposed.
+- 53 tests covering auth, containers, cohorts, jobs, sessions, transfers,
+  data tools, and config; 1 integration test conditionally skipped when
+  no live workbench is reachable.
+
+---
+
 ## [Unreleased]
 
 ### Added
