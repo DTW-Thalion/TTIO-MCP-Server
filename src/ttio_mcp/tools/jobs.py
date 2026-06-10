@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -12,14 +11,7 @@ from ttio.workbench.jobs import build_cohort_input
 from ttio_mcp.config import Config
 from ttio_mcp.connection import ConnectionManager
 from ttio_mcp.errors import to_tool_error
-
-
-def _ser(obj: Any) -> Any:
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return {k: _ser(v) for k, v in dataclasses.asdict(obj).items()}
-    if isinstance(obj, (list, tuple)):
-        return [_ser(x) for x in obj]
-    return obj
+from ttio_mcp.tools._serialize import ser as _ser
 
 
 def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
