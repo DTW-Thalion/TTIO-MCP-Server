@@ -28,6 +28,18 @@ def test_expired_session_raises():
     assert "expired" in str(ei.value).lower()
 
 
+def test_bearer_zero_expiry_not_rejected():
+    # BearerAuth / API-key sessions synthesize expires_at == 0 (never expires);
+    # the SDK's .expired reads epoch 0 as long-past, but we must NOT reject it.
+    sess = FakeSession(expired=True)
+    sess.expires_at = 0
+    cm = ConnectionManager()
+    fc = FakeWorkbenchClient(session=sess)
+    cm._inject(fc)
+    assert cm.require_client() is fc
+    assert cm.status()["expired"] is False
+
+
 def test_status_disconnected():
     cm = ConnectionManager()
     st = cm.status()
