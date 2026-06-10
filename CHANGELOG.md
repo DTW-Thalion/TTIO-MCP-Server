@@ -45,60 +45,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - Admin capabilities (user management, groups, operations dashboard, KEK
   rotation, pipeline registration) and container delete are intentionally
   not exposed.
-- 53 tests covering auth, containers, cohorts, jobs, sessions, transfers,
-  data tools, and config; 1 integration test conditionally skipped when
-  no live workbench is reachable.
+### Fixed
+- Headless auth via `TTIO_WB_TOKEN` is no longer rejected as expired. A
+  bearer/API-key session is synthesized with `expires_at == 0`, which the SDK
+  read as long-past; that sentinel now means "never expires", so auto-connected
+  tool calls succeed.
+- `ttio_upload` (mode `plain`) transport-encodes the `.tio` to a `.tis` stream
+  before streaming, instead of sending raw HDF5. The workbench `/transport`
+  endpoint ingests TI packets, so the previous behavior failed mid-upload with
+  `invalid packet magic`.
+- MCP stdout framing is protected. An stdio MCP server frames JSON-RPC on
+  stdout, so the real stdout is now reserved for the transport and fd 1 is
+  redirected to stderr — a stray write (e.g. the liboqs C-level banner emitted
+  during a PQC transfer) can no longer corrupt a protocol frame.
+
+### Testing
+- 55 unit tests (mocked workbench client) covering every tool module, config,
+  errors, connection, summarize/export, and stdout protection.
+- An opt-in live integration suite (`TTIO_MCP_LIVE=1`) drives the MCP server as
+  a real stdio subprocess against a running `tti-workbench-server`: a read/data
+  smoke (`test_live_smoke.py`) plus a full matrix (`test_live_full.py`)
+  exercising every tool and all four transfer modes (plain/byok/server-kek/pqc).
+  Skipped cleanly when no daemon is reachable; verified 12 passed against a live
+  HSM-backed daemon.
 
 ---
-
-## [Unreleased]
-
-### Added
-- `ttio_launch_uploader` tool — the server spawns a local tkinter
-  file-picker on the user's desktop (same-machine stdio deployment)
-  and copies the chosen file into `TTIO_MCP_INTAKE_DIR`. Bridges the
-  "user has a binary file, wants it in the catalog" gap without
-  pasting bytes through the chat or prearranging a URI.
-  - New module tree: `src/ttio_mcp/uploader/{__init__,core,gui,__main__}.py`.
-    `core.py` holds all pure logic (format detection, intake
-    resolution, collision-safe copy); `gui.py` lazily imports
-    tkinter; `__main__.py` is the JSON-emitting subprocess entry
-    point.
-  - New env var `TTIO_MCP_INTAKE_DIR` surfaces through `Config` and
-    `docs/configuration.md`. Unset → `intake_not_configured`.
-  - Collision rule: `sample.mpgo` →
-    `sample-20260424T120000Z.mpgo` → `sample-20260424T120000Z-1.mpgo`.
-    Injectable clock keeps the test deterministic.
-  - Subprocess pattern (`subprocess.run` with `timeout_seconds`,
-    default 600) keeps the MCP loop responsive and lets the tool
-    surface `timeout`, `cancelled`, `no_display`, `upload_failed` as
-    stable `error.code` values.
-  - `scripts/try_uploader.py` drives the subprocess end-to-end for
-    manual smoke-testing on a host with a display.
-  - Tool surface grows from 13 → 14; M3, M8 name sets updated.
-- 24 new tests (`tests/test_uploader_core.py`,
-  `tests/test_launch_uploader_tool.py`) — mock `subprocess.run` so
-  CI doesn't need a display. Total: 112 passing.
-- Upload progress window. The picker hand-off now opens a
-  determinate `ttk.Progressbar` that tracks the copy into
-  `TTIO_MCP_INTAKE_DIR`, with live `%` and MiB read-out. Core gains
-  a `progress=(copied, total)` callback and a chunked
-  `_copy_with_progress` loop (1 MiB chunks, replaces the previous
-  `shutil.copy2`); the tkinter wrapper drives the bar from a worker
-  thread via `queue.Queue` + `root.after`. Partial destinations are
-  cleaned up on mid-stream failure. 3 new core tests; total: 115
-  passing.
-
-### Changed
-- Documentation tune-up following M8.
-  - `README.md`: M9 row marked **blocked** (upstream TTI-O M40a PyPI
-    publish is itself paused on account-verification).
-  - `docs/configuration.md`: keyring rules now describe both supported
-    algorithms (`AES-256-GCM` at 32 bytes and `hmac-sha256`
-    variable-length) and the cross-algorithm `algorithm_mismatch`
-    guarantee. Transport section drops the stale "v0.1" marker and
-    calls out that MCP-over-HTTP / SSE are not implemented.
-  - `DEPLOYMENT-GUIDE.md`: test-count line bumped 84 → 88 to match M8.
 
 ## [0.8.0.dev0] — 2026-04-24
 
