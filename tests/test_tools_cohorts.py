@@ -2,11 +2,13 @@
 import asyncio
 from dataclasses import dataclass
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from tests.conftest import FakeWorkbenchClient
 from ttio_mcp.config import Config
 from ttio_mcp.connection import ConnectionManager
+from ttio_mcp.errors import ToolError
 from ttio_mcp.tools import cohorts as co
 from ttio_mcp.tools.cohorts import predicate_from_json
 
@@ -68,3 +70,18 @@ def test_cohort_preview_count():
     app, fc = _app(count=42)
     out = _call(app, "ttio_cohort_preview_count", select="subjects")
     assert out["count"] == 42
+
+
+def test_predicate_empty_children_raises():
+    with pytest.raises(ToolError):
+        predicate_from_json({"op": "and", "children": []})
+
+
+def test_predicate_missing_children_raises():
+    with pytest.raises(ToolError):
+        predicate_from_json({"op": "or"})
+
+
+def test_predicate_not_missing_child_raises():
+    with pytest.raises(ToolError):
+        predicate_from_json({"op": "not"})

@@ -22,20 +22,20 @@ _LEAF_KEYS = {
 def predicate_from_json(node: dict[str, Any]) -> C.CohortPredicate:
     """Translate the server's JSON predicate shape into a CohortPredicate tree."""
     op = node.get("op")
-    if op == "and":
-        children = [predicate_from_json(c) for c in node["children"]]
+    if op in ("and", "or"):
+        raw = node.get("children")
+        if not isinstance(raw, list) or not raw:
+            raise ToolError(f"'{op}' predicate requires a non-empty 'children' list")
+        children = [predicate_from_json(c) for c in raw]
         out = children[0]
         for c in children[1:]:
-            out = out & c
-        return out
-    if op == "or":
-        children = [predicate_from_json(c) for c in node["children"]]
-        out = children[0]
-        for c in children[1:]:
-            out = out | c
+            out = out & c if op == "and" else out | c
         return out
     if op == "not":
-        return ~predicate_from_json(node["child"])
+        child = node.get("child")
+        if child is None:
+            raise ToolError("'not' predicate requires a 'child' node")
+        return ~predicate_from_json(child)
     # leaf
     if "phenotype" in node:
         return C.phenotype(node["phenotype"], node.get("op", "eq"), node.get("value"))
