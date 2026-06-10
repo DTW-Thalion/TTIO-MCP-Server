@@ -40,9 +40,32 @@ not exposed.
 
 ## Install
 
+`ttio-mcp` ships from this repository (it is not published to PyPI). Install the
+pinned **v0.9.0** release with pip:
+
+```bash
+pip install "ttio-mcp @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
+```
+
+This installs the `ttio-mcp` console script and pulls its pinned
+`ttio[network,crypto]` dependency. To enable the optional transfer extras —
+post-quantum (`pqc`, ML-KEM-1024) and remote-`.tio` URLs (`cloud`) — request
+them by name:
+
+```bash
+pip install "ttio-mcp[pqc] @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
+```
+
+> Installing builds the `ttio` SDK from source, so `git` and a C toolchain
+> (e.g. `build-essential` on Debian/Ubuntu, the Xcode Command Line Tools on
+> macOS) must be available.
+
+### From a clone (development)
+
 ```bash
 git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git
 cd TTIO-MCP-Server
+git checkout v0.9.0
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
@@ -104,12 +127,14 @@ Full tool catalog: [docs/tools.md](docs/tools.md).
 ## Development
 
 ```bash
-pytest -q        # 53 passed, 1 skipped expected
+pytest -q        # 55 passed, 12 skipped expected
 ruff check src tests
 ```
 
 CI runs the same commands across Python 3.11 and 3.12 on Ubuntu
-(`.github/workflows/ci.yml`).
+(`.github/workflows/ci.yml`). The 12 skipped tests are the opt-in live
+integration suite — enable them with `TTIO_MCP_LIVE=1` against a running
+workbench server (see `tests/integration/test_live_smoke.py`).
 
 ## License
 
