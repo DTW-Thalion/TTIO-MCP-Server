@@ -1,4 +1,6 @@
 # tests/test_summarize.py
+import json
+
 import numpy as np
 
 from ttio_mcp.summarize import array_summary, downsample, top_peaks
@@ -24,3 +26,16 @@ def test_downsample_caps_length():
     x = np.arange(1000.0)
     ds = downsample(x, max_points=100)
     assert len(ds) <= 100
+
+
+def test_non_finite_becomes_none():
+    a = np.array([1.0, np.nan, np.inf])
+    s = array_summary(a)
+    assert s["max"] is None  # inf -> None
+    # whole result must be valid JSON (no NaN/Infinity literals)
+    json.dumps(s, allow_nan=False)
+    peaks = top_peaks(np.array([1.0, 2.0]), np.array([np.nan, 3.0]), n=2)
+    json.dumps(peaks, allow_nan=False)
+    ds = downsample(np.array([1.0, np.nan]), max_points=10)
+    assert ds[1] is None
+    json.dumps(ds, allow_nan=False)
