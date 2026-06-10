@@ -28,7 +28,7 @@ class Config:
     page_size: int
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         state = _default_state_dir()
         export_dir = Path(os.environ.get("TTIO_MCP_EXPORT_DIR", state / "exports"))
         cache_dir = Path(os.environ.get("TTIO_MCP_CACHE_DIR", state / "cache"))

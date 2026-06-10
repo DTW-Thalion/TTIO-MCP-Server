@@ -27,3 +27,4 @@ def test_from_env_reads_values(monkeypatch, tmp_path):
     assert cfg.username == "alice"
     assert cfg.page_size == 250
     assert cfg.export_dir == tmp_path / "e"
+    assert cfg.cache_dir == tmp_path / "c"
