@@ -87,3 +87,52 @@ async def call_tool(session, name: str, **args) -> dict:
         return json.loads(txt)
     except (ValueError, TypeError):
         return {"_raw": txt}
+
+
+# --- admin setup helpers (require TTIO_WB_BOOTSTRAP_STAGING) -----------------
+# Jobs / sessions / encrypted-transfer tests need an identity that belongs to a
+# project (and, for jobs, a registered pipeline). Pipeline registration is admin
+# and intentionally not an MCP tool, so the suite provisions it out-of-band via
+# the bootstrap-admin SDK. These skip cleanly when no admin staging is provided.
+
+def bootstrap_creds() -> dict:
+    """The bootstrap-admin credentials dict, or skip if no staging dir."""
+    staging = os.environ.get("TTIO_WB_BOOTSTRAP_STAGING")
+    if not staging:
+        pytest.skip("needs TTIO_WB_BOOTSTRAP_STAGING (bootstrap-admin credentials)")
+    with open(os.path.join(staging, "bootstrap-credentials.json")) as fh:
+        return json.load(fh)
+
+
+def admin_in_project(url: str, project: str):
+    """Return a bootstrap-admin SDK client that is a member of *project*.
+
+    Grants membership via PATCH /v1/auth/users/{uid} then re-logs-in so the
+    session carries the project. Skips if no admin staging is configured.
+    """
+    import ttio
+
+    staging = os.environ.get("TTIO_WB_BOOTSTRAP_STAGING")
+    if not staging:
+        pytest.skip("needs TTIO_WB_BOOTSTRAP_STAGING (admin) to grant project / register pipelines")
+    client = ttio.connect(url, auth=ttio.BootstrapAdminAuth(staging_root=staging))
+    if project not in (client.session.projects or ()):
+        import urllib.request
+        http = f"{client.http_scheme}://{client.host}:{client.port}"
+        urllib.request.urlopen(urllib.request.Request(
+            f"{http}/v1/auth/users/{client.session.user_id}", method="PATCH",
+            data=json.dumps({"projects": [project]}).encode(),
+            headers={"Authorization": f"Bearer {client.session.token}",
+                     "Content-Type": "application/json"},
+        )).read()
+        client = ttio.connect(url, auth=ttio.BootstrapAdminAuth(staging_root=staging))
+    return client
+
+
+def register_shell_pipeline(client, project: str, *, definition: str = "echo ok && sleep 0.1") -> str:
+    """Register a throwaway shell pipeline via the admin SDK; return its id."""
+    import secrets
+    return client.pipelines().register(
+        identifier=f"e2e-{secrets.token_hex(3)}", version="1.0.0", project=project,
+        engine_pin="shell", definition=definition, inputs_schema={}, outputs_schema={},
+    ).pipeline_id
