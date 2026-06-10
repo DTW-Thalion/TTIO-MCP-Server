@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
+from tests.conftest import FakeWorkbenchClient
 from ttio_mcp.config import Config
 from ttio_mcp.connection import ConnectionManager
 from ttio_mcp.tools import containers as ct
-from tests.conftest import FakeWorkbenchClient
 
 
 @dataclass
