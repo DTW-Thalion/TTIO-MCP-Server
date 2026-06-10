@@ -29,7 +29,8 @@ def build_app() -> FastMCP:
     sessions_tools.register(app, CONN, CONFIG)
     from ttio_mcp.tools import transfers as transfers_tools
     transfers_tools.register(app, CONN, CONFIG)
-    # Later phases append: data.
+    from ttio_mcp.tools import data as data_tools
+    data_tools.register(app, CONN, CONFIG)
     _maybe_autoconnect()
     return app
 
