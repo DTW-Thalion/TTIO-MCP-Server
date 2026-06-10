@@ -23,7 +23,9 @@ def build_app() -> FastMCP:
     containers_tools.register(app, CONN, CONFIG)
     from ttio_mcp.tools import cohorts as cohorts_tools
     cohorts_tools.register(app, CONN, CONFIG)
-    # Later phases append: jobs, sessions, transfers, data.
+    from ttio_mcp.tools import jobs as jobs_tools
+    jobs_tools.register(app, CONN, CONFIG)
+    # Later phases append: sessions, transfers, data.
     _maybe_autoconnect()
     return app
 
