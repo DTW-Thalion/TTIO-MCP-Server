@@ -16,7 +16,9 @@ class FakeSession:
         self.user_id = "u1"
         self.capabilities = frozenset(capabilities)
         self.projects = tuple(projects)
-        self.expires_at = 0 if expired else 9999999999
+        # An expired session has a real (non-zero) past expiry. expires_at == 0
+        # is reserved for the bearer/API-key "never expires" sentinel.
+        self.expires_at = 1 if expired else 9999999999
         self.provider = "password-totp"
         self.session_id = "s1"
 

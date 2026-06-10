@@ -10,6 +10,20 @@ from ttio import BearerAuth, PasswordTotpAuth
 from ttio_mcp.errors import ToolError
 
 
+def _session_expired(session: Any) -> bool:
+    """True only if the session has a real expiry that has passed.
+
+    ``BearerAuth`` / API-key sessions are synthesized with ``expires_at == 0``
+    as a "never expires" sentinel; the SDK's ``.expired`` would otherwise read
+    epoch 0 as long-past. Treat a falsy ``expires_at`` as non-expiring.
+    """
+    if session is None:
+        return False
+    if not getattr(session, "expires_at", 0):
+        return False
+    return bool(getattr(session, "expired", False))
+
+
 class ConnectionManager:
     """Owns at most one authenticated WorkbenchClient.
 
@@ -41,7 +55,7 @@ class ConnectionManager:
         if self._client is None:
             raise ToolError("Not connected. Call ttio_login (or set TTIO_WB_URL + TTIO_WB_TOKEN).")
         session = getattr(self._client, "session", None)
-        if session is not None and getattr(session, "expired", False):
+        if _session_expired(session):
             raise ToolError("Session expired. Call ttio_login again (API-key tokens do not expire).")
         return self._client
 
@@ -54,5 +68,5 @@ class ConnectionManager:
             "username": getattr(s, "username", None),
             "projects": list(getattr(s, "projects", ()) or ()),
             "capabilities": sorted(getattr(s, "capabilities", ()) or ()),
-            "expired": bool(getattr(s, "expired", False)),
+            "expired": _session_expired(s),
         }
