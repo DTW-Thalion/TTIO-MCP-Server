@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture, build_nmr_fixture
 from ttio_mcp.catalog import NotFound
 from ttio_mcp.tools.get_quantifications import handle as handle_get_quant
 from ttio_mcp.tools.get_run import handle as handle_get_run
@@ -12,7 +13,6 @@ from ttio_mcp.tools.get_spectrum import InvalidArgument
 from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
 from ttio_mcp.tools.register import handle as handle_register
 from ttio_mcp.tools.search_identifications import handle as handle_search
-from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
 @pytest.fixture

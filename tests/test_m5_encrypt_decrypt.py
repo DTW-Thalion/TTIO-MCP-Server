@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture
 from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, Keyring
 from ttio_mcp.tools import decrypt_file as df
 from ttio_mcp.tools import encrypt_file as ef
@@ -16,7 +17,6 @@ from ttio_mcp.tools.get_spectrum import KeyRequired
 from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
 from ttio_mcp.tools.register import handle as handle_register
 from ttio_mcp.tools.reverify import handle as handle_reverify
-from tests._fixtures import build_ms_fixture
 
 
 def _write_keyring_file(path: Path, key_id: str, raw: bytes) -> Path:

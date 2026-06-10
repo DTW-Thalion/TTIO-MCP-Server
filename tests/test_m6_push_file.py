@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._cloud import s3_fsspec_kwargs
+from tests._fixtures import build_ms_fixture
 from ttio_mcp.catalog import ResolveFailed
 from ttio_mcp.hashes import hash_file_sha256
 from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, KeyNotFound, Keyring
@@ -21,8 +23,6 @@ from ttio_mcp.tools.get_file import handle as handle_get_file
 from ttio_mcp.tools.get_spectrum import handle as handle_get_spec
 from ttio_mcp.tools.push_file import SchemeNotWritable
 from ttio_mcp.tools.push_file import handle as handle_push
-from tests._cloud import s3_fsspec_kwargs
-from tests._fixtures import build_ms_fixture
 
 
 def _run(coro):

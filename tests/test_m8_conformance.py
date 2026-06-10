@@ -42,10 +42,10 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from tests._fixtures import build_ms_fixture
 from ttio_mcp.db import Base, make_engine, make_session_factory
 from ttio_mcp.db.models import User
 from ttio_mcp.keyring import AES_256_GCM, AES_256_GCM_KEY_LEN, HMAC_SHA256
-from tests._fixtures import build_ms_fixture
 
 EXPECTED_TOOLS = {
     "ttio_register_file",

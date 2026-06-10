@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture
 from ttio_mcp.keyring import (
     AES_256_GCM,
     AES_256_GCM_KEY_LEN,
@@ -21,7 +22,6 @@ from ttio_mcp.tools import sign_file as sf
 from ttio_mcp.tools import verify_signature as vf
 from ttio_mcp.tools.get_file import handle as handle_get_file
 from ttio_mcp.tools.register import handle as handle_register
-from tests._fixtures import build_ms_fixture
 
 
 def _write_hmac_keyring(
