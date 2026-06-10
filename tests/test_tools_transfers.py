@@ -1,6 +1,8 @@
 # tests/test_tools_transfers.py
 import asyncio
+import base64
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from tests.conftest import FakeWorkbenchClient
@@ -76,3 +78,17 @@ def test_federation_peers():
     app, _ = _app()
     out = _call(app, "ttio_federation_peers")
     assert out["peers"] == []
+
+
+def test_decode_key_rejects_garbage():
+    from ttio_mcp.errors import ToolError
+    from ttio_mcp.tools.transfers import _decode_key
+    with pytest.raises(ToolError):
+        _decode_key("not a valid key!!!")
+
+
+def test_decode_key_accepts_hex_and_base64():
+    from ttio_mcp.tools.transfers import _decode_key
+    k = b"0" * 32
+    assert len(_decode_key(k.hex())) == 32
+    assert len(_decode_key(base64.b64encode(k).decode())) == 32

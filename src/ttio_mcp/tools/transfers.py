@@ -2,7 +2,9 @@
 """Upload/download tools with a single mode selector; plus federation peers."""
 from __future__ import annotations
 
+import asyncio
 import base64
+import binascii
 
 from mcp.server.fastmcp import FastMCP
 from ttio.workbench.client import ServerRecipient
@@ -16,13 +18,16 @@ _MODES = {"plain", "byok", "server-kek", "pqc"}
 
 
 def _decode_key(s: str) -> bytes:
-    """Accept hex (64 chars) or base64 for a 32-byte key."""
+    """Decode a key from hex (64 chars) or base64. Raises ToolError on invalid encoding."""
     if len(s) == 64:
         try:
             return bytes.fromhex(s)
         except ValueError:
-            pass
-    return base64.b64decode(s)
+            pass  # fall through to base64 (deliberate: hex tried first for 64-char inputs)
+    try:
+        return base64.b64decode(s, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ToolError("key is not valid hex or base64") from exc
 
 
 def _result(res) -> dict:
@@ -71,6 +76,7 @@ def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
                 res = await client.upload_encrypted_pqc(project=project, container_uri=container_uri,
                                                         tio_path=path,
                                                         recipient_public_key=_decode_key(recipient_public_key),
+                                                        encrypt_headers=encrypt_headers,
                                                         preview=preview)
         except Exception as exc:  # noqa: BLE001
             return {"error": to_tool_error(exc)}
@@ -114,7 +120,8 @@ def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
                 raise ToolError("pqc download requires recipient_private_key=")
             await client.download_decrypted_pqc(container_uri=container_uri,
                                                 recipient_private_key=_decode_key(recipient_private_key),
-                                                out_tio_path=out_path, preview=preview)
+                                                out_tio_path=out_path, filters=filters, max_au=max_au,
+                                                preview=preview)
             return {"out_path": out_path}
         except Exception as exc:  # noqa: BLE001
             return {"error": to_tool_error(exc)}
@@ -123,7 +130,7 @@ def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
     async def ttio_federation_peers() -> dict:
         """List federation peers (empty on single-node v1.0)."""
         try:
-            peers = conn.require_client().federation().peers()
+            peers = await asyncio.to_thread(conn.require_client().federation().peers)
         except Exception as exc:  # noqa: BLE001
             return {"error": to_tool_error(exc)}
         return {"peers": [_ser(p) for p in peers]}
