@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture, build_nmr_fixture
 from ttio_mcp.tools.get_file import handle as handle_get
 from ttio_mcp.tools.list_files import handle as handle_list
 from ttio_mcp.tools.register import handle as handle_register
 from ttio_mcp.tools.reverify import handle as handle_reverify
-from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
 @pytest.fixture

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture
 from ttio_mcp.catalog import UnknownUser
 from ttio_mcp.db.models import User
 from ttio_mcp.tools.register import handle as handle_register
-from tests._fixtures import build_ms_fixture
 
 
 @pytest.fixture
