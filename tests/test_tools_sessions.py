@@ -34,16 +34,14 @@ class _Sessions:
         self.terminated = session_id
 
 
-class _Proxy:
-    url = "wss://h:18443/v1/sessions/se1/connect"
-
-
 def _app():
     cm = ConnectionManager()
     fc = FakeWorkbenchClient()
     sess = _Sessions()
     fc.set_subclient("sessions", sess)
-    fc.session_proxy = lambda session_id, path="/": _Proxy()
+    fc.host = "h"
+    fc.port = 18443
+    fc.ws_scheme = "wss"
     cm._inject(fc)
     app = FastMCP("t")
     st.register(app, cm, Config.from_env())
@@ -71,4 +69,4 @@ def test_session_terminate():
 def test_session_attach_url():
     app, _ = _app()
     out = _call(app, "ttio_session_attach_url", session_id="se1")
-    assert out["attach_url"].endswith("/se1/connect")
+    assert out["attach_url"] == "wss://h:18443/v1/sessions/se1/"
