@@ -2,165 +2,101 @@
 
 All configuration is read from the environment of the process that
 launches `ttio-mcp`. The server never accepts secrets through MCP
-tool arguments.
+tool arguments; tokens are never persisted to disk.
+
+## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TTIO_MCP_DB_URL` | `sqlite:///ttio_mcp.db` | SQLAlchemy URL for the catalog. |
-| `TTIO_MCP_FSSPEC_KWARGS` | *(unset)* | JSON object merged into every `fsspec.open` call for cloud URIs. |
-| `TTIO_KEYRING_PATH` | *(unset)* | Filesystem path to the JSON keyring used by the encryption tools. |
-| `TTIO_MCP_INTAKE_DIR` | *(unset)* | Directory where `ttio_launch_uploader` stages files chosen by the user. |
+| `TTIO_WB_URL` | *(unset)* | Workbench server URL, e.g. `https://wb.example.com:18443` or `wss://wb.example.com:18443/transport`. Required for auto-connect; may also be passed per-call to `ttio_login`. |
+| `TTIO_WB_TOKEN` | *(unset)* | Long-lived API key (`ttiowbk_...`) or bearer token (`ttiowbs_...`) for headless auto-connect at startup. |
+| `TTIO_WB_USERNAME` | *(unset)* | Optional username label attached to the session (informational). |
+| `TTIO_MCP_EXPORT_DIR` | `~/.local/state/ttio-mcp/exports` | Directory where `ttio_dataset_export` writes parquet/csv/json output files. |
+| `TTIO_MCP_CACHE_DIR` | `~/.local/state/ttio-mcp/cache` | Directory used for intermediate cache files. |
+| `TTIO_MCP_PAGE_SIZE` | `100` | Default page size for container list calls when the caller does not pass `limit`. |
 
-Cloud credentials (AWS, GCP, Azure) are picked up by `fsspec` / `s3fs`
-from their usual sources — env vars, profile files, IMDS, workload
-identity. The server does not read them itself.
+## Authentication
 
-## `TTIO_MCP_DB_URL`
+Two paths are supported. Tokens are held in memory for the lifetime
+of the server process and are never written to disk.
 
-Any SQLAlchemy URL works. Common shapes:
+### Interactive login
 
-```bash
-# Local SQLite (default)
-export TTIO_MCP_DB_URL="sqlite:///ttio_mcp.db"
+Leave `TTIO_WB_TOKEN` unset and call `ttio_login` from the LLM client
+after the server starts:
 
-# Postgres
-export TTIO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/ttio_mcp"
-```
-
-After setting, bootstrap the schema:
-
-```bash
-alembic upgrade head
-```
-
-The initial migration seeds a `system` user (id=1). All subsequent
-catalog writes default their `registered_by` / `owner_user_id` to
-this row unless a tool call supplies `as_user` for a pre-provisioned
-name. `alembic downgrade base` reverses every migration.
-
-## `TTIO_MCP_FSSPEC_KWARGS`
-
-A JSON object forwarded to `fsspec.open` whenever a cloud URI is
-resolved. Per-call `fsspec_kwargs` on `ttio_register_file` and
-`ttio_get_spectrum` **shallow-merge on top** (per-call keys win).
-
-```bash
-# Private S3 bucket — use the caller's default AWS credentials
-export TTIO_MCP_FSSPEC_KWARGS='{"anon": false}'
-
-# Public bucket
-export TTIO_MCP_FSSPEC_KWARGS='{"anon": true}'
-
-# Custom S3 endpoint (MinIO, LocalStack, etc.)
-export TTIO_MCP_FSSPEC_KWARGS='{
-  "anon": false,
-  "client_kwargs": {"endpoint_url": "https://minio.example:9000"}
-}'
-```
-
-Invalid JSON or a non-object value aborts server startup with a clear
-error. An unset variable is equivalent to `{}`.
-
-Supported cloud schemes (anything
-`mpeg_o.remote.is_remote_url` recognises): `s3://`, `https://`,
-`http://`, `gs://`, `gcs://`, `abfs://`, `abfss://`, `az://`. Install
-the `cloud` extra (`pip install -e ".[cloud]"`) to pull in `s3fs`
-and `fsspec`.
-
-## `TTIO_KEYRING_PATH`
-
-Path to the JSON keyring used by `ttio_encrypt_file`,
-`ttio_decrypt_file`, and encrypted reads via `ttio_get_spectrum`.
-
-Missing file = empty keyring; the error only surfaces when a tool
-looks up a specific `key_id`. No keyring at all (env unset) means
-encrypt / decrypt / encrypted-reads fail with
-`keyring_not_configured`.
-
-### File format
-
-```json
+```jsonc
+// tool call
 {
-  "keys": {
-    "demo": {
-      "value": "base64-encoded 32 bytes",
-      "algorithm": "AES-256-GCM",
-      "created_at": "2026-04-24T12:00:00+00:00",
-      "description": "optional free text"
-    },
-    "prod-2026q2": {
-      "value": "...",
-      "algorithm": "AES-256-GCM"
-    }
-  }
+  "username": "alice",
+  "password": "hunter2",
+  "totp": "123456",
+  "url": "https://wb.example.com:18443"   // optional; overrides TTIO_WB_URL
 }
 ```
 
-Rules:
+`url` defaults to `TTIO_WB_URL` when omitted. The session token
+expires after approximately 24 hours; call `ttio_login` again to
+refresh it. Call `ttio_logout` to drop the in-memory session. Neither
+action touches disk.
 
-- Top level must be an object with a `keys` object.
-- Each entry must be an object with a string `value`.
-- `value` must decode as valid base64. Length rules are
-  per-algorithm (see below).
-- `algorithm` defaults to `AES-256-GCM`. Two algorithms are supported:
-  - `AES-256-GCM` — bulk encryption; key must decode to exactly 32 bytes.
-    Used by `ttio_encrypt_file`, `ttio_decrypt_file`, `ttio_push_file`,
-    and encrypted-`get_spectrum` reads.
-  - `hmac-sha256` — dataset signing; key must decode to at least 1 byte
-    (32 bytes is conventional). Used by `ttio_sign_file` and
-    `ttio_verify_signature`.
-  Any other value raises `invalid_keyring`. Each tool pins the
-  algorithm it expects, so a key tagged for one algorithm cannot be
-  used with the other (`algorithm_mismatch`).
-- `created_at` and `description` are metadata only — they surface
-  through the keyring's listing API but never through tool responses.
+### Headless / API-key auto-connect
 
-### Generating a key
+Set both `TTIO_WB_URL` and `TTIO_WB_TOKEN` before launching `ttio-mcp`.
+The server establishes a session at startup; no `ttio_login` call is
+needed:
 
 ```bash
-python -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())'
+export TTIO_WB_URL="https://wb.example.com:18443"
+export TTIO_WB_TOKEN="ttiowbk_abc123..."
+ttio-mcp
 ```
 
-Drop the output into `value`. Never commit the keyring file.
+API keys (`ttiowbk_...`) are issued by a workbench administrator from
+the Operations Dashboard. They do not expire on their own but can be
+revoked server-side. Bearer tokens (`ttiowbs_...`) are short-lived
+session tokens obtained via a prior login and are less suitable for
+unattended deployments.
 
-### Keys never cross the MCP wire
+## `TTIO_MCP_EXPORT_DIR`
 
-Tool callers pass a `key_id`; the server resolves it to raw bytes
-in-process via `ttio_mcp.keyring.Keyring.get`. Responses carry only
-the `key_id` string.
-
-## `TTIO_MCP_INTAKE_DIR`
-
-Destination directory for files staged through `ttio_launch_uploader`.
-Required before the tool can run — absent configuration surfaces as
-the `intake_not_configured` error.
+Writable directory for `ttio_dataset_export` output. Parquet, CSV, and
+JSON export files land here by default; callers may override per-call
+with the `out_dir` parameter.
 
 ```bash
-export TTIO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
+export TTIO_MCP_EXPORT_DIR="$HOME/ttio-exports"
 ```
 
-When a file is chosen, the uploader copies it into this directory
-using the source filename. If a file with that name already exists, a
-UTC timestamp is inserted before the extension
-(`sample.mpgo` → `sample-20260424T120000Z.mpgo`); repeat collisions
-add an integer counter. The original on disk is never modified.
+The directory is created on first use if it does not exist.
 
-The directory is auto-created on first write (server-side), so it's
-safe to point at a path that doesn't yet exist. Only the server
-process needs access — the tkinter picker runs in a subprocess that
-inherits the server's environment.
+## `TTIO_MCP_CACHE_DIR`
 
-Since the uploader opens a tkinter window, the server must run on a
-host with a display (the same machine as the MCP client, which is the
-normal stdio deployment). Headless deployments (containers, SSH
-without X11) will get `no_display` back — keep the catalog import
-tools for those workflows.
+Writable directory for intermediate cache files. Separate from the
+export directory so caches can be cleared without touching exported
+results.
+
+```bash
+export TTIO_MCP_CACHE_DIR="/var/cache/ttio-mcp"
+```
+
+## `TTIO_MCP_PAGE_SIZE`
+
+Integer. Controls the default `limit` passed to container-list calls
+when the caller does not supply one.
+
+```bash
+export TTIO_MCP_PAGE_SIZE=50
+```
 
 ## Transport
 
-stdio only. Config knobs for the MCP transport itself live in
-whatever launches the server — `claude mcp add ttio-mcp -- ttio-mcp`
-and equivalents. The server name (`ttio-mcp`) and version (from
-`ttio_mcp.__version__`) are reported in the `initialize` response.
-MCP-over-HTTP and SSE are not implemented; run the server over SSH
-or an external stdio↔HTTP proxy if you need remote access.
+stdio only. Configure the server in whatever launches `ttio-mcp`:
+
+```bash
+claude mcp add ttio-mcp -- ttio-mcp
+```
+
+The server name (`ttio-mcp`) and version (from `ttio_mcp.__version__`)
+are reported in the MCP `initialize` response.
+MCP-over-HTTP and SSE are not implemented.
