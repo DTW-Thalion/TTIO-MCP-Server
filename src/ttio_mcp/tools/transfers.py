@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import os
+import tempfile
 
 from mcp.server.fastmcp import FastMCP
+from ttio.transport import file_to_transport
 from ttio.workbench.client import ServerRecipient
 
 from ttio_mcp.config import Config
@@ -15,6 +18,20 @@ from ttio_mcp.errors import ToolError, to_tool_error
 from ttio_mcp.tools._serialize import ser as _ser
 
 _MODES = {"plain", "byok", "server-kek", "pqc"}
+
+
+async def _upload_plain(client, *, project: str, container_uri: str, tio_path: str):
+    """Encode a .tio to a temporary .tis transport stream, then upload it.
+
+    The workbench /transport endpoint ingests TI packets, not raw HDF5, so a
+    plain upload must transport-encode first (mirrors tio-browser's TisEncoder).
+    The encrypted modes take a tio_path and encode internally, so this is only
+    needed for the unencrypted path.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        tis = os.path.join(td, "upload.tis")
+        await asyncio.to_thread(file_to_transport, tio_path, tis)
+        return await client.upload_path(project=project, container_uri=container_uri, path=tis)
 
 
 def _decode_key(s: str) -> bytes:
@@ -46,7 +63,7 @@ def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
                           encrypt_headers: bool = False, preview: bool = False) -> dict:
         """Upload a local .tio to the server.
 
-        mode=plain         : no encryption.
+        mode=plain         : transport-encode the .tio to .tis and upload (no encryption).
         mode=byok          : caller key (hex/base64, 32 bytes), AES-256-GCM per-AU.
         mode=server-kek    : multi-recipient with a server ServerRecipient(kek_id) (HSM-wrapped).
         mode=pqc           : ML-KEM-1024 recipient_public_key (preview-gated; pass preview=true).
@@ -56,7 +73,8 @@ def register(app: FastMCP, conn: ConnectionManager, config: Config) -> None:
         try:
             client = conn.require_client()
             if mode == "plain":
-                res = await client.upload_path(project=project, container_uri=container_uri, path=path)
+                res = await _upload_plain(client, project=project,
+                                          container_uri=container_uri, tio_path=path)
             elif mode == "byok":
                 if not key:
                     raise ToolError("byok upload requires key=")

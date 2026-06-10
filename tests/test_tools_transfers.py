@@ -45,14 +45,25 @@ def _call(app, name, **kw):
     return asyncio.run(res) if asyncio.iscoroutine(res) else res
 
 
-def test_upload_plain(tmp_path):
+def test_upload_plain(tmp_path, monkeypatch):
     f = tmp_path / "x.tio"
     f.write_bytes(b"data")
+    encoded = {}
+
+    def fake_encode(tio_path, output, **kw):
+        encoded["from"] = str(tio_path)
+        with open(output, "wb") as fh:
+            fh.write(b"TI\x01\x01")  # transport magic; content irrelevant to the fake
+
+    # plain upload must transport-encode the .tio to .tis before streaming
+    monkeypatch.setattr("ttio_mcp.tools.transfers.file_to_transport", fake_encode)
     app, fc = _app()
     out = _call(app, "ttio_upload", mode="plain", project="adni",
                 container_uri="uri:tio:1", path=str(f))
     assert fc.recorded["mode"] == "plain"
     assert out["last_acked_au_sequence"] == 3
+    assert encoded["from"] == str(f)  # the .tio was the encode source
+    assert fc.recorded["path"].endswith(".tis")  # a .tis was streamed, not the .tio
 
 
 def test_upload_server_kek(tmp_path):
