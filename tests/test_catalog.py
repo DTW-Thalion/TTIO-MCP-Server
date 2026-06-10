@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._fixtures import build_ms_fixture, build_nmr_fixture
 from ttio_mcp.catalog import (
     InvalidURI,
     NotFound,
@@ -22,7 +23,6 @@ from ttio_mcp.db.models import (
     Study,
 )
 from ttio_mcp.hashes import hash_file_sha256
-from tests._fixtures import build_ms_fixture, build_nmr_fixture
 
 
 @pytest.fixture
