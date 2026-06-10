@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ttio-mcp"
-version = "0.8.0.dev0"
-description = "MCP server exposing TTI-O (.mpgo) file capabilities to LLM clients"
+version = "0.9.0.dev0"
+description = "MCP server exposing tti-workbench-server (non-admin) capabilities to LLM clients"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -22,10 +22,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "mcp>=1.0",
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
-    "mpeg-o @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.1.1#subdirectory=python",
+    "mcp>=1.2",
+    "ttio[network,crypto] @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.7.1#subdirectory=python",
+    "numpy>=1.24",
+    "pyarrow>=16.0",
 ]
 
 [project.optional-dependencies]
@@ -34,11 +34,12 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "mypy>=1.10",
-    "moto[server]>=5.0",
+]
+pqc = [
+    "ttio[pqc] @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.7.1#subdirectory=python",
 ]
 cloud = [
-    "s3fs>=2023.1.0",
-    "fsspec",
+    "ttio[cloud] @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.7.1#subdirectory=python",
 ]
 
 [project.scripts]
