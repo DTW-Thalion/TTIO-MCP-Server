@@ -5,12 +5,14 @@ instance can be added to Claude as a **custom connector by URL** (no local
 install). This is **Phase 0** of the remote-connector work (see
 [remote-connector-scope.md](remote-connector-scope.md)).
 
-> **Phase-0 limitation — single shared session.** This server still holds ONE
-> in-memory workbench session (the service account from `TTIO_WB_URL` +
-> `TTIO_WB_TOKEN`). **Every connected user shares that one identity.** There is
-> no per-user authentication or isolation yet — that is Phase 1 (per-session
-> tenancy) and Phase 2 (per-user OAuth). Deploy this only for a single trusted
-> team/service account until those land.
+> **Headless/service-account mode — single shared identity.** When configured
+> with a service account (`TTIO_WB_URL` + `TTIO_WB_TOKEN`) and NO OAuth, this
+> server holds one in-memory workbench session and **every connected user
+> shares that one identity** — deploy it that way only for a single trusted
+> team/service account. For per-user authentication and isolation, enable the
+> OAuth resource-server mode below (`TTIO_MCP_OAUTH_ISSUER`, Phase 2 SP3): each
+> user authenticates with their own Keycloak token and gets their own
+> per-session workbench client.
 
 ## Configuration
 

@@ -5,11 +5,12 @@ _FakeJWKS that replaces the real PyJWKClient so no network is needed.
 """
 import time
 
+import httpx
 import jwt
+import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from ttio_mcp.oauth import KeycloakTokenVerifier
-
+from ttio_mcp.oauth import KeycloakTokenVerifier, exchange_for_workbench
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,10 +161,6 @@ async def test_missing_required_scope_rejected():
 # Task 3: exchange_for_workbench (RFC 8693 token exchange)
 # ---------------------------------------------------------------------------
 
-import httpx
-
-from ttio_mcp.oauth import exchange_for_workbench
-
 
 async def test_exchange_posts_and_returns_token(monkeypatch):
     """exchange_for_workbench POSTs RFC 8693 form data and returns (token, expires_at)."""
@@ -278,8 +275,6 @@ async def test_exchange_http_error_propagates(monkeypatch):
             return _Resp()
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
-    import pytest
-
     with pytest.raises(httpx.HTTPStatusError):
         await exchange_for_workbench(
             user_token="bad.jwt",

@@ -6,13 +6,16 @@ import asyncio
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import ttio
 from ttio import BearerAuth, PasswordTotpAuth
 
 from ttio_mcp.errors import ToolError
 from ttio_mcp.oauth import exchange_for_workbench
+
+if TYPE_CHECKING:
+    from ttio_mcp.config import Config
 
 
 def _current_access_token():
@@ -74,7 +77,7 @@ class ConnectionManager:
         self._lock = threading.RLock()
         self._resolver: Callable[[], Any] | None = None
         self._service: tuple[str, str, str | None] | None = None
-        self._oauth: object | None = None
+        self._oauth: Config | None = None
         self._max_sessions = max_sessions
 
     # --- wiring --------------------------------------------------------
@@ -86,7 +89,7 @@ class ConnectionManager:
     ) -> None:
         self._service = (url, token, username)
 
-    def enable_oauth(self, config: object) -> None:
+    def enable_oauth(self, config: Config) -> None:
         """Store OAuth/Keycloak config for per-session token-exchange connect.
 
         When set, require_client() will exchange the current request's validated
@@ -179,6 +182,12 @@ class ConnectionManager:
         at = _current_access_token()
         if at is None:
             return None
+        # These are guaranteed set by build_app()'s startup guard before
+        # enable_oauth() is ever called; narrow them for the type checker.
+        assert (
+            cfg.oauth_token_url and cfg.oauth_client_id
+            and cfg.oauth_client_secret and cfg.url
+        )
         # A failed exchange (expired/invalid token, Keycloak down/misconfigured)
         # is a real error — surface it as a clean ToolError rather than letting a
         # raw httpx traceback escape. (Distinct from the no-token path above,

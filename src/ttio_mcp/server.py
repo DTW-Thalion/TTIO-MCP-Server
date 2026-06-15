@@ -36,6 +36,9 @@ def build_app() -> FastMCP:
                 "OAuth is enabled (TTIO_MCP_OAUTH_ISSUER set) but these required "
                 f"settings are unset: {', '.join(_missing)}."
             )
+        # Narrow the Optional[str] fields for the type checker (the guard above
+        # already guarantees they are set).
+        assert CONFIG.oauth_issuer and CONFIG.oauth_jwks_url and CONFIG.oauth_resource_url
 
         from mcp.server.auth.settings import AuthSettings
 
@@ -55,8 +58,9 @@ def build_app() -> FastMCP:
             streamable_http_path=CONFIG.http_path,
             token_verifier=verifier,
             auth=AuthSettings(
-                issuer_url=CONFIG.oauth_issuer,
-                resource_server_url=CONFIG.oauth_resource_url,
+                # pydantic coerces these str URLs to AnyHttpUrl at validation.
+                issuer_url=CONFIG.oauth_issuer,  # type: ignore[arg-type]
+                resource_server_url=CONFIG.oauth_resource_url,  # type: ignore[arg-type]
                 required_scopes=list(CONFIG.oauth_required_scopes),
             ),
         )

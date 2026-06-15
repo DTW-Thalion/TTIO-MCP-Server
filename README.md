@@ -148,12 +148,12 @@ Full tool catalog: [docs/tools.md](docs/tools.md).
 ## Development
 
 ```bash
-pytest -q        # 55 passed, 12 skipped expected
+pytest -q        # 88 passed, 17 skipped expected
 ruff check src tests
 ```
 
 CI runs the same commands across Python 3.11 and 3.12 on Ubuntu
-(`.github/workflows/ci.yml`). The 12 skipped tests are the opt-in live
+(`.github/workflows/ci.yml`). The 17 skipped tests are the opt-in live
 integration suite — enable them with `TTIO_MCP_LIVE=1` against a running
 workbench server (see `tests/integration/test_live_smoke.py`).
 
