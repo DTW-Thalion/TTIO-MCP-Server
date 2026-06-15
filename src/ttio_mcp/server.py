@@ -87,8 +87,20 @@ async def _serve() -> None:
         await srv.run(read_stream, write_stream, srv.create_initialization_options())
 
 
+def _serve_http() -> None:
+    """Serve over streamable-HTTP (uvicorn + the MCP session manager).
+
+    No stdout protection is needed here — HTTP does not frame the protocol on
+    stdout. Host/port/path come from Config via build_app().
+    """
+    build_app().run(transport="streamable-http")
+
+
 def main() -> None:
-    asyncio.run(_serve())
+    if CONFIG.transport == "http":
+        _serve_http()
+    else:
+        asyncio.run(_serve())
 
 
 if __name__ == "__main__":
