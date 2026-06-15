@@ -45,6 +45,7 @@ class ConnectionManager:
         self._lock = threading.RLock()
         self._resolver: Callable[[], Any] | None = None
         self._service: tuple[str, str, str | None] | None = None
+        self._oauth: object | None = None
         self._max_sessions = max_sessions
 
     # --- wiring --------------------------------------------------------
@@ -55,6 +56,15 @@ class ConnectionManager:
         self, url: str, token: str, username: str | None = None
     ) -> None:
         self._service = (url, token, username)
+
+    def enable_oauth(self, config: object) -> None:
+        """Store OAuth/Keycloak config for per-session token-exchange connect.
+
+        Task 5 will implement _maybe_oauth_connect() on top of this.  For now
+        this is a minimal setter so build_app() can wire the config without
+        calling a non-existent method.
+        """
+        self._oauth = config
 
     def _key(self) -> Any:
         if self._resolver is not None:
