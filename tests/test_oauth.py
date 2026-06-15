@@ -154,3 +154,137 @@ async def test_missing_required_scope_rejected():
         },
     )
     assert await _verifier(priv).verify_token(tok) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 3: exchange_for_workbench (RFC 8693 token exchange)
+# ---------------------------------------------------------------------------
+
+import httpx
+
+from ttio_mcp.oauth import exchange_for_workbench
+
+
+async def test_exchange_posts_and_returns_token(monkeypatch):
+    """exchange_for_workbench POSTs RFC 8693 form data and returns (token, expires_at)."""
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "wb.jwt.token", "expires_in": 300}
+
+        def raise_for_status(self):
+            pass
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None, **k):
+            captured["url"] = url
+            captured["data"] = data
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    tok, exp = await exchange_for_workbench(
+        user_token="user.jwt",
+        token_url="https://kc/realms/ttio/protocol/openid-connect/token",
+        client_id="ttio-mcp",
+        client_secret="s3cr3t",
+        audience="tti-workbench",
+    )
+    assert tok == "wb.jwt.token"
+    assert exp > 0
+    assert captured["url"] == "https://kc/realms/ttio/protocol/openid-connect/token"
+    assert captured["data"]["grant_type"] == "urn:ietf:params:oauth:grant-type:token-exchange"
+    assert captured["data"]["subject_token"] == "user.jwt"
+    assert captured["data"]["audience"] == "tti-workbench"
+    assert captured["data"]["subject_token_type"] == "urn:ietf:params:oauth:token-type:access_token"
+    assert captured["data"]["client_id"] == "ttio-mcp"
+    assert captured["data"]["client_secret"] == "s3cr3t"
+
+
+async def test_exchange_no_expires_in_returns_zero(monkeypatch):
+    """When the response omits expires_in, expires_at should be 0 (never-expires sentinel)."""
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "wb.jwt.no-expiry"}
+
+        def raise_for_status(self):
+            pass
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None, **k):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    tok, exp = await exchange_for_workbench(
+        user_token="user.jwt",
+        token_url="https://kc/token",
+        client_id="ttio-mcp",
+        client_secret="s3cr3t",
+        audience="tti-workbench",
+    )
+    assert tok == "wb.jwt.no-expiry"
+    assert exp == 0
+
+
+async def test_exchange_http_error_propagates(monkeypatch):
+    """A non-200 response (raise_for_status raises) should propagate as an exception."""
+
+    class _Resp:
+        status_code = 401
+
+        def json(self):
+            return {}
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "401 Unauthorized",
+                request=None,  # type: ignore[arg-type]
+                response=None,  # type: ignore[arg-type]
+            )
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None, **k):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    import pytest
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await exchange_for_workbench(
+            user_token="bad.jwt",
+            token_url="https://kc/token",
+            client_id="ttio-mcp",
+            client_secret="s3cr3t",
+            audience="tti-workbench",
+        )

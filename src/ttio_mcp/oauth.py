@@ -8,6 +8,9 @@ Responsibilities (one module, no FastMCP/connection imports):
 """
 from __future__ import annotations
 
+import time
+
+import httpx
 import jwt
 from jwt import PyJWKClient
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -75,3 +78,39 @@ class KeycloakTokenVerifier(TokenVerifier):
             subject=claims.get("sub"),
             claims=claims,
         )
+
+
+async def exchange_for_workbench(
+    *,
+    user_token: str,
+    token_url: str,
+    client_id: str,
+    client_secret: str,
+    audience: str,
+    timeout: float = 10.0,
+) -> tuple[str, int]:
+    """RFC 8693 standard token exchange: swap the user's access token for a
+    token whose aud is ``audience`` (tti-workbench).
+
+    Returns ``(access_token, expires_at_epoch)`` where ``expires_at`` is 0
+    when the response omits ``expires_in`` (treated as never-expires by
+    ConnectionManager).  Raises ``httpx.HTTPStatusError`` on a non-2xx
+    response so the caller can handle auth failures explicitly.
+
+    No token values are logged.
+    """
+    data = {
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token": user_token,
+        "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "audience": audience,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(token_url, data=data)
+        resp.raise_for_status()
+        body = resp.json()
+    expires_in = int(body.get("expires_in", 0))
+    expires_at = int(time.time()) + expires_in if expires_in else 0
+    return body["access_token"], expires_at
