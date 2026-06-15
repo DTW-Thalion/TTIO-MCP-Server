@@ -79,6 +79,65 @@ TTIO_MCP_HTTP_SMOKE=1 .venv/bin/python -m pytest tests/integration/test_http_smo
 It starts the server over HTTP, polls `/healthz`, then `initialize`s and lists
 all 28 tools through `streamablehttp_client`.
 
+## OAuth resource-server mode (Phase 2 SP3)
+
+Set `TTIO_MCP_OAUTH_ISSUER` to turn the server into a **per-user OAuth resource
+server**. Each MCP client presents its own Keycloak access token; the server
+validates it and issues a per-session workbench client. No shared service-account
+token is needed.
+
+| Env var | Required | Purpose |
+|---|---|---|
+| `TTIO_MCP_OAUTH_ISSUER` | yes | Keycloak realm URL (enables OAuth mode). |
+| `TTIO_MCP_OAUTH_RESOURCE_URL` | yes | Public URL of this server's `/mcp` endpoint. |
+| `TTIO_MCP_OAUTH_JWKS_URL` | yes | Keycloak JWKS endpoint. |
+| `TTIO_MCP_OAUTH_TOKEN_URL` | yes | Keycloak token endpoint (RFC 8693 exchange). |
+| `TTIO_MCP_OAUTH_CLIENT_ID` | yes | Client ID for `ttio-mcp` in Keycloak. |
+| `TTIO_MCP_OAUTH_CLIENT_SECRET` | yes | Client secret. |
+| `TTIO_MCP_OAUTH_AUDIENCE` | no | `aud` claim to expect (default `ttio-mcp`). |
+| `TTIO_MCP_OAUTH_EXCHANGE_AUDIENCE` | no | Audience for the exchanged workbench token (default `tti-workbench`). |
+
+**Run with Docker (OAuth mode):**
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e TTIO_MCP_TRANSPORT=http \
+  -e TTIO_WB_URL="https://wb.example.com:18443" \
+  -e TTIO_MCP_OAUTH_ISSUER="https://kc.example.com/realms/ttio" \
+  -e TTIO_MCP_OAUTH_RESOURCE_URL="https://mcp.example.com/mcp" \
+  -e TTIO_MCP_OAUTH_JWKS_URL="https://kc.example.com/realms/ttio/protocol/openid-connect/certs" \
+  -e TTIO_MCP_OAUTH_TOKEN_URL="https://kc.example.com/realms/ttio/protocol/openid-connect/token" \
+  -e TTIO_MCP_OAUTH_CLIENT_ID="ttio-mcp" \
+  -e TTIO_MCP_OAUTH_CLIENT_SECRET="..." \
+  ttio-mcp:remote
+```
+
+**Verify OAuth endpoints** (server running, no valid token):
+
+```bash
+# Protected-resource metadata (RFC 9728)
+curl https://mcp.example.com/.well-known/oauth-protected-resource/mcp
+
+# Unauthenticated POST → 401 + WWW-Authenticate: Bearer
+curl -s -o /dev/null -w "%{http_code}" -X POST https://mcp.example.com/mcp
+```
+
+**Run the opt-in OAuth smoke test** (requires a live Keycloak):
+
+```bash
+TTIO_MCP_OAUTH_SMOKE=1 \
+TTIO_MCP_OAUTH_ISSUER="https://kc.example.com/realms/ttio" \
+TTIO_MCP_OAUTH_RESOURCE_URL="https://127.0.0.1:8000/mcp" \
+TTIO_MCP_OAUTH_JWKS_URL="https://kc.example.com/realms/ttio/protocol/openid-connect/certs" \
+TTIO_MCP_OAUTH_TOKEN_URL="https://kc.example.com/realms/ttio/protocol/openid-connect/token" \
+TTIO_MCP_OAUTH_CLIENT_ID="ttio-mcp" \
+TTIO_MCP_OAUTH_CLIENT_SECRET="..." \
+TTIO_MCP_OAUTH_USER_TOKEN="<user-access-token>" \
+.venv/bin/python -m pytest tests/integration/test_http_oauth_smoke.py -v
+```
+
+See [docs/configuration.md](configuration.md) for the full OAuth variable reference.
+
 ## Operational notes
 
 - The service-account token lives only in process memory; it is never written to

@@ -91,7 +91,14 @@ export TTIO_MCP_PAGE_SIZE=50
 
 ## Transport
 
-stdio only. Configure the server in whatever launches `ttio-mcp`:
+| Variable | Default | Purpose |
+|---|---|---|
+| `TTIO_MCP_TRANSPORT` | `stdio` | `stdio` (default) or `http` (streamable-HTTP). |
+| `TTIO_MCP_HTTP_HOST` | `127.0.0.1` | Bind address when `TTIO_MCP_TRANSPORT=http`. |
+| `TTIO_MCP_HTTP_PORT` | `8000` | Bind port when `TTIO_MCP_TRANSPORT=http`. |
+| `TTIO_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path when `TTIO_MCP_TRANSPORT=http`. |
+
+For stdio, configure the server in whatever launches `ttio-mcp`:
 
 ```bash
 claude mcp add ttio-mcp -- ttio-mcp
@@ -99,4 +106,46 @@ claude mcp add ttio-mcp -- ttio-mcp
 
 The server name (`ttio-mcp`) and version (from `ttio_mcp.__version__`)
 are reported in the MCP `initialize` response.
-MCP-over-HTTP and SSE are not implemented.
+
+## OAuth resource-server mode (HTTP transport only)
+
+Setting `TTIO_MCP_OAUTH_ISSUER` switches the server into **OAuth resource-server
+mode**. In this mode the server:
+
+1. Validates every inbound bearer token against the Keycloak realm JWKS
+   (audience `ttio-mcp`, RS256/ES256, scope `ttio.connector`).
+2. Serves the RFC 9728 protected-resource metadata document at
+   `GET /.well-known/oauth-protected-resource/mcp`.
+3. Returns `401 Unauthorized` + `WWW-Authenticate: Bearer` for requests
+   with a missing or invalid token.
+4. Performs an RFC 8693 token exchange at Keycloak to obtain a
+   `tti-workbench`-audience token, then builds a per-session workbench
+   client from that token.
+
+This mode requires `TTIO_MCP_TRANSPORT=http`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TTIO_MCP_OAUTH_ISSUER` | *(unset)* | Keycloak realm URL, e.g. `https://kc.example.com/realms/ttio`. Setting this enables OAuth resource-server mode. |
+| `TTIO_MCP_OAUTH_RESOURCE_URL` | *(unset)* | Public URL of this MCP server's `/mcp` endpoint (reported in protected-resource metadata), e.g. `https://mcp.example.com/mcp`. |
+| `TTIO_MCP_OAUTH_JWKS_URL` | *(unset)* | Keycloak JWKS endpoint, e.g. `https://kc.example.com/realms/ttio/protocol/openid-connect/certs`. |
+| `TTIO_MCP_OAUTH_TOKEN_URL` | *(unset)* | Keycloak token endpoint for RFC 8693 exchange, e.g. `https://kc.example.com/realms/ttio/protocol/openid-connect/token`. |
+| `TTIO_MCP_OAUTH_CLIENT_ID` | *(unset)* | Client ID registered in Keycloak for `ttio-mcp`. |
+| `TTIO_MCP_OAUTH_CLIENT_SECRET` | *(unset)* | Client secret for the above client. |
+| `TTIO_MCP_OAUTH_AUDIENCE` | `ttio-mcp` | Expected `aud` claim in the inbound user token. |
+| `TTIO_MCP_OAUTH_EXCHANGE_AUDIENCE` | `tti-workbench` | Target `audience` in the RFC 8693 token-exchange request; the exchanged token is used to connect to the workbench. |
+
+### Token flow
+
+```
+MCP client  →  ttio-mcp (validates aud=ttio-mcp, scope=ttio.connector)
+                    ↓  RFC 8693 exchange (Keycloak)
+                    ↓  aud=tti-workbench token
+               per-session ttio.workbench client
+```
+
+Users obtain a `ttio-mcp`-audience access token from the Keycloak realm
+(scope `ttio.connector`). The MCP server validates that token on each
+request, exchanges it for a `tti-workbench`-audience token, and builds
+an isolated workbench client for that session. No headless `TTIO_WB_TOKEN`
+is needed in OAuth mode.
