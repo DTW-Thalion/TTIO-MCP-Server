@@ -18,7 +18,20 @@ CONFIG = Config.from_env()
 
 
 def build_app() -> FastMCP:
-    app = FastMCP("ttio-mcp")
+    app = FastMCP(
+        "ttio-mcp",
+        host=CONFIG.http_host,
+        port=CONFIG.http_port,
+        streamable_http_path=CONFIG.http_path,
+    )
+
+    from starlette.responses import JSONResponse
+
+    async def _healthz(_request):
+        return JSONResponse({"status": "ok"})
+
+    app.custom_route("/healthz", methods=["GET"])(_healthz)
+
     from ttio_mcp.tools import auth as auth_tools
 
     auth_tools.register(app, CONN, CONFIG)
