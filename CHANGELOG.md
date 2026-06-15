@@ -12,9 +12,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   defaults `127.0.0.1:8000/mcp`) to serve over streamable-HTTP instead of stdio,
   so one instance can be added to Claude as a custom connector by URL. Adds a
   `GET /healthz` route, a `Dockerfile`, an `http` extra (`uvicorn`), and
-  `docs/remote-deployment.md`. **Limitation:** still a single shared workbench
-  session (the service account) — per-session tenancy + per-user OAuth are
-  Phases 1–2 (see `docs/remote-connector-scope.md`).
+  `docs/remote-deployment.md`. Per-user identity is Phase 2 (see
+  `docs/remote-connector-scope.md`).
+
+### Changed
+- **Per-session tenancy** (Phase 1 of the remote-connector work). The
+  `ConnectionManager` is now a registry keyed per MCP session (resolved from the
+  current request via `get_context()`, with a single default slot outside a
+  request — stdio/tests/startup), so concurrent connector users each get an
+  isolated workbench client. Service-account auto-connect is now **lazy and
+  per-session** (each session connects its own client on first use) rather than
+  one eager client at startup; the registry is a bounded LRU. Tool handlers are
+  unchanged. **Note:** guaranteed client teardown awaits a `WorkbenchClient.close()`
+  in the `ttio` SDK (eviction drops the reference for GC today); per-user
+  identity remains Phase 2.
 
 ### Fixed
 - **`DEPLOYMENT-GUIDE.md` rewritten for the v0.9.0 workbench-client
