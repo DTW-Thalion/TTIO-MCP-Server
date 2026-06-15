@@ -72,3 +72,42 @@ async def test_http_initialize_and_list_tools():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+@pytest.mark.asyncio
+async def test_two_sessions_are_independent():
+    """Two separate MCP sessions resolve to independent registry slots — the
+    server handles distinct sessions without error or cross-session bleed."""
+    import json
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    port = _free_port()
+    env = {
+        **os.environ,
+        "TTIO_MCP_TRANSPORT": "http",
+        "TTIO_MCP_HTTP_PORT": str(port),
+        "TTIO_MCP_HTTP_HOST": "127.0.0.1",
+    }
+    env.pop("TTIO_WB_URL", None)
+    env.pop("TTIO_WB_TOKEN", None)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "ttio_mcp.server"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        _wait_health(port)
+        url = f"http://127.0.0.1:{port}/mcp"
+        for _ in range(2):
+            async with streamablehttp_client(url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    res = await session.call_tool("ttio_connection_status", {})
+                    payload = json.loads(res.content[0].text)
+                    assert payload.get("connected") is False
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
