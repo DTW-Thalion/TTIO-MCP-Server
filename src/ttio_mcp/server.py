@@ -18,7 +18,20 @@ CONFIG = Config.from_env()
 
 
 def build_app() -> FastMCP:
-    app = FastMCP("ttio-mcp")
+    app = FastMCP(
+        "ttio-mcp",
+        host=CONFIG.http_host,
+        port=CONFIG.http_port,
+        streamable_http_path=CONFIG.http_path,
+    )
+
+    from starlette.responses import JSONResponse
+
+    async def _healthz(_request):
+        return JSONResponse({"status": "ok"})
+
+    app.custom_route("/healthz", methods=["GET"])(_healthz)
+
     from ttio_mcp.tools import auth as auth_tools
 
     auth_tools.register(app, CONN, CONFIG)
@@ -74,8 +87,20 @@ async def _serve() -> None:
         await srv.run(read_stream, write_stream, srv.create_initialization_options())
 
 
+def _serve_http() -> None:
+    """Serve over streamable-HTTP (uvicorn + the MCP session manager).
+
+    No stdout protection is needed here — HTTP does not frame the protocol on
+    stdout. Host/port/path come from Config via build_app().
+    """
+    build_app().run(transport="streamable-http")
+
+
 def main() -> None:
-    asyncio.run(_serve())
+    if CONFIG.transport == "http":
+        _serve_http()
+    else:
+        asyncio.run(_serve())
 
 
 if __name__ == "__main__":

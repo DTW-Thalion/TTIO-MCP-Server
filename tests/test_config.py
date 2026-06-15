@@ -28,3 +28,29 @@ def test_from_env_reads_values(monkeypatch, tmp_path):
     assert cfg.page_size == 250
     assert cfg.export_dir == tmp_path / "e"
     assert cfg.cache_dir == tmp_path / "c"
+
+
+def test_transport_defaults_to_stdio(monkeypatch):
+    for k in ("TTIO_MCP_TRANSPORT", "TTIO_MCP_HTTP_HOST", "TTIO_MCP_HTTP_PORT", "TTIO_MCP_HTTP_PATH"):
+        monkeypatch.delenv(k, raising=False)
+    cfg = Config.from_env()
+    assert cfg.transport == "stdio"
+    assert cfg.http_host == "127.0.0.1"
+    assert cfg.http_port == 8000
+    assert cfg.http_path == "/mcp"
+
+
+def test_http_transport_from_env(monkeypatch):
+    monkeypatch.setenv("TTIO_MCP_TRANSPORT", "http")
+    monkeypatch.setenv("TTIO_MCP_HTTP_HOST", "0.0.0.0")
+    monkeypatch.setenv("TTIO_MCP_HTTP_PORT", "9001")
+    monkeypatch.setenv("TTIO_MCP_HTTP_PATH", "/ttio")
+    cfg = Config.from_env()
+    assert (cfg.transport, cfg.http_host, cfg.http_port, cfg.http_path) == ("http", "0.0.0.0", 9001, "/ttio")
+
+
+def test_transport_is_validated(monkeypatch):
+    import pytest
+    monkeypatch.setenv("TTIO_MCP_TRANSPORT", "carrier-pigeon")
+    with pytest.raises(ValueError):
+        Config.from_env()

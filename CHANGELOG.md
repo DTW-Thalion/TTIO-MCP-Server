@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Remote streamable-HTTP transport** (Phase 0 of the remote-connector work).
+  Set `TTIO_MCP_TRANSPORT=http` (with `TTIO_MCP_HTTP_HOST`/`PORT`/`PATH`,
+  defaults `127.0.0.1:8000/mcp`) to serve over streamable-HTTP instead of stdio,
+  so one instance can be added to Claude as a custom connector by URL. Adds a
+  `GET /healthz` route, a `Dockerfile`, an `http` extra (`uvicorn`), and
+  `docs/remote-deployment.md`. **Limitation:** still a single shared workbench
+  session (the service account) — per-session tenancy + per-user OAuth are
+  Phases 1–2 (see `docs/remote-connector-scope.md`).
+
 ### Fixed
 - **`DEPLOYMENT-GUIDE.md` rewritten for the v0.9.0 workbench-client
   architecture.** The guide still described the pre-0.9.0 local `.tio`
