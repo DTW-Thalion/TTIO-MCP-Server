@@ -41,6 +41,11 @@ pqc = [
 cloud = [
     "ttio[cloud] @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.7.1#subdirectory=python",
 ]
+# Remote streamable-HTTP transport (TTIO_MCP_TRANSPORT=http). uvicorn is already
+# pulled transitively by mcp's HTTP transports; pinned here for the deploy image.
+http = [
+    "uvicorn>=0.30",
+]
 
 [project.scripts]
 ttio-mcp = "ttio_mcp.server:main"
