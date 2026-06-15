@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **`DEPLOYMENT-GUIDE.md` rewritten for the v0.9.0 workbench-client
+  architecture.** The guide still described the pre-0.9.0 local `.tio`
+  catalog (SQLite/Alembic, JSON keyring, `ttio_register_file`, the 14-tool
+  surface) and would have led a new deployer to run `alembic upgrade head`
+  against a database that no longer exists. It now documents installing the
+  client, pointing it at a `tti-workbench-server` via `TTIO_WB_URL` /
+  `TTIO_WB_TOKEN`, interactive vs. headless auth, wiring into Claude Code /
+  Claude Desktop / generic MCP clients, and the stdio-only deployment model.
+
 ## [0.9.0] — 2026-06-10
 
 ### Changed
