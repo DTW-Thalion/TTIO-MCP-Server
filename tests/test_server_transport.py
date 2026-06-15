@@ -44,3 +44,23 @@ def test_main_dispatches_stdio(monkeypatch):
     monkeypatch.setattr(server.asyncio, "run", lambda coro: ran.setdefault("ran", coro))
     server.main()
     assert ran.get("ran") == "coro-stub"
+
+
+def test_session_key_outside_request_is_none():
+    # get_context() raises outside a request; _session_key swallows that -> None,
+    # so ConnectionManager falls back to its default key (stdio/tests/startup).
+    assert server._session_key(server.build_app()) is None
+
+
+def test_maybe_autoconnect_enables_lazy_service(monkeypatch):
+    monkeypatch.setattr(
+        server, "CONFIG",
+        dataclasses.replace(server.CONFIG, url="https://wb:18443", token="ttiowbk_x"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        server.CONN, "enable_service_autoconnect",
+        lambda url, token, username=None: captured.update(url=url, token=token),
+    )
+    server._maybe_autoconnect()
+    assert captured == {"url": "https://wb:18443", "token": "ttiowbk_x"}

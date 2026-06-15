@@ -47,18 +47,33 @@ def build_app() -> FastMCP:
     transfers_tools.register(app, CONN, CONFIG)
     from ttio_mcp.tools import data as data_tools
     data_tools.register(app, CONN, CONFIG)
+    CONN.bind_session_resolver(lambda: _session_key(app))
     _maybe_autoconnect()
     return app
 
 
+def _session_key(app: FastMCP):
+    """Stable per-connection key, or None outside a request (-> default key).
+
+    ``get_context()`` raises outside an active request; we treat that as "no
+    session context" so the ConnectionManager uses its single default slot
+    (stdio, tests, startup).
+    """
+    try:
+        return id(app.get_context().session)
+    except Exception:
+        return None
+
+
 def _maybe_autoconnect() -> None:
-    """If a URL + token are configured, pre-connect with a bearer/API key."""
+    """Enable lazy per-session service-account auto-connect when configured.
+
+    Each MCP session connects its own client on first use (see
+    ConnectionManager.require_client), rather than one shared client created
+    eagerly at startup.
+    """
     if CONFIG.url and CONFIG.token:
-        try:
-            CONN.login_token(CONFIG.url, CONFIG.token, CONFIG.username)
-        except Exception:
-            # Leave disconnected; ttio_connection_status will report it.
-            pass
+        CONN.enable_service_autoconnect(CONFIG.url, CONFIG.token, CONFIG.username)
 
 
 def _reserve_stdout_for_protocol() -> io.TextIOWrapper:
