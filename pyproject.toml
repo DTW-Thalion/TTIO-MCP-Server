@@ -26,7 +26,7 @@ dependencies = [
     "ttio[network,crypto] @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.7.1#subdirectory=python",
     "numpy>=1.24",
     "pyarrow>=16.0",
-    "PyJWT>=2.8",
+    "PyJWT[cryptography]>=2.8",
 ]
 
 [project.optional-dependencies]
