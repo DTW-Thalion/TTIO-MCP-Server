@@ -3,13 +3,22 @@
 This guide walks you through **installing, configuring, and running**
 the TTI-O MCP Server from a fresh machine. It assumes you know how to
 open a terminal, run commands, and edit text files, but it does not
-assume you've worked with Python packaging, SQLAlchemy, or the Model
-Context Protocol before.
+assume you've worked with Python packaging or the Model Context
+Protocol before.
 
 If you just want a one-screen cheat sheet, skip to the
 [Quickstart](#quickstart). If you want to understand what each piece
 actually does before you run it, start with
 [What this server is](#what-this-server-is).
+
+> **Version note.** This guide describes **v0.9.0**, the workbench-client
+> rewrite. In this release the server is a **non-admin client of a running
+> [tti-workbench-server](https://github.com/DTW-Thalion/tti-workbench-server)**
+> — it holds a session token in memory and relays calls to that server. It
+> does **not** maintain a local file catalog, a database, or a keyring.
+> (Pre-0.9.0 releases were a local `.mpgo` catalog; if you are following
+> instructions that mention `alembic`, a SQLite catalog, or
+> `ttio_register_file`, they are for the old architecture.)
 
 ---
 
@@ -21,11 +30,11 @@ actually does before you run it, start with
 4. [Quickstart](#quickstart)
 5. [Step-by-step install](#step-by-step-install)
 6. [Configure the environment](#configure-the-environment)
-7. [Bootstrap the catalog (database)](#bootstrap-the-catalog-database)
+7. [Authenticate](#authenticate)
 8. [Connect it to a client](#connect-it-to-a-client)
 9. [First end-to-end test](#first-end-to-end-test)
 10. [Upgrading to a new version](#upgrading-to-a-new-version)
-11. [Deployment options (production-ish)](#deployment-options-production-ish)
+11. [Deployment options](#deployment-options)
 12. [Troubleshooting](#troubleshooting)
 13. [Uninstall](#uninstall)
 
@@ -34,77 +43,70 @@ actually does before you run it, start with
 ## What this server is
 
 **TTI-O** is a scientific file format for multi-omics data — mass
-spectrometry runs, NMR spectra, identifications, quantifications.
-Think of a `.mpgo` file as one self-contained record of a biology
-experiment.
+spectrometry runs, NMR spectra, identifications, quantifications. A
+`.tio` file is one self-contained record of a biology experiment.
 
-**MCP** (Model Context Protocol) is a simple wire protocol invented
-so that language-model applications like Claude can call external
-tools in a consistent way. Every MCP server exposes a handful of
-"tools" — named operations with a known input shape. The client
-(Claude, an IDE plugin, a custom script) sends a tool call; the
-server does the work and sends back a reply.
+**tti-workbench-server** is the long-running service that actually
+stores those containers, runs cohort queries, schedules pipeline jobs,
+manages interactive sessions, and brokers encrypted transfers. It
+speaks an HTTP + WebSocket API on (by default) port 18443 and requires
+authentication.
 
-**TTI-O MCP Server** is the bridge between those two worlds. It lets
-a language model:
+**MCP** (Model Context Protocol) is a wire protocol that lets
+language-model applications like Claude call external tools in a
+consistent way. Every MCP server exposes a set of "tools" — named
+operations with a known input shape. The client (Claude, an IDE plugin,
+a custom script) sends a tool call; the server does the work and sends
+back a reply.
 
-- **Catalog** `.mpgo` files — the server reads each file once,
-  extracts its key metadata (studies, runs, instruments,
-  identifications, quantifications), and saves that metadata in a
-  small database. The files themselves stay where they are on disk
-  or in cloud storage.
-- **Query** that catalog — find all runs with an acquisition mode,
-  search identifications by ChEBI ID or compound name, list
-  quantifications above an abundance threshold.
-- **Fetch spectra** lazily — open a specific file, pull one spectrum,
-  downsample it so it fits in a chat response.
-- **Encrypt and decrypt** — protect a file's intensity channels with
-  AES-256-GCM using a key stored **server-side** so keys never cross
-  the chat.
-- **Sign and verify** — tamper-detect a file's signal-channel datasets
-  with HMAC-SHA256 using a separate server-side key. Signatures are
-  embedded in HDF5 attributes on each dataset; re-running
-  `ttio_verify_signature` with the same key tells you whether anything
-  changed.
+**TTI-O MCP Server** (`ttio-mcp`) is the bridge between those two
+worlds. It logs in to a workbench server as a regular **non-admin
+user** and exposes that user's capabilities to an LLM as 28 MCP tools:
 
-The server runs as a small Python program. By default it talks to one
-client at a time over **standard input/output** (stdio) — the same
-channel that command-line programs use to read and write text. The
-client starts `ttio-mcp` as a child process, exchanges messages
-with it, and shuts it down when the conversation ends.
+- **Auth** — `ttio_login`, `ttio_whoami`, `ttio_logout`,
+  `ttio_connection_status`.
+- **Containers** — list, get, inspect layers, read the HDF5 manifest.
+- **Cohorts** — run cohort queries and preview their row counts.
+- **Jobs / Pipelines** — submit, list, get, cancel jobs; tail job
+  events; list and get pipelines.
+- **Sessions** — create, list, get, terminate interactive sessions;
+  fetch a session attach URL.
+- **Transfers** — upload and download containers (`plain`, `byok`,
+  `server-kek`, `pqc` encryption modes); list federation peers.
+- **Data** — summarize, read, and export a **local** `.tio` file (e.g.
+  one fetched via `ttio_download`).
+
+It deliberately exposes **no admin or destructive operations** — no user
+management, no groups, no operations dashboard, no KEK rotation, no
+pipeline registration, and no container delete. Whatever the workbench
+account you log in with is allowed to do, the LLM can do through these
+tools; nothing more.
+
+The server runs as a small Python program. It talks to **one MCP client
+at a time over standard input/output** (stdio). The client starts
+`ttio-mcp` as a child process, exchanges JSON-RPC messages with it, and
+shuts it down when the conversation ends. There is **no network port,
+no HTTP endpoint, and no SSE** on the MCP side — the only network the
+server itself opens is the outbound connection to the workbench.
 
 ## How it works (architecture)
 
 A bird's-eye picture:
 
 ```
-┌────────────────────────┐        stdio pipe        ┌──────────────────────────┐
-│   MCP client           │  ◀──── JSON-RPC ────▶   │   ttio-mcp (this repo) │
-│   (Claude, IDE, ...)   │                          │                          │
-└────────────────────────┘                          │  ┌────────────────────┐  │
-                                                    │  │ MCP server loop    │  │
-                                                    │  │  - list_tools      │  │
-                                                    │  │  - call_tool       │  │
+┌────────────────────────┐     stdio (JSON-RPC)     ┌──────────────────────────┐      HTTPS / WSS      ┌────────────────────────┐
+│   MCP client           │  ◀────────────────────▶ │   ttio-mcp (this repo)   │  ◀─────────────────▶  │  tti-workbench-server  │
+│   (Claude, IDE, ...)   │      stdin / stdout      │                          │   Bearer / WS token   │  (REST + WebSocket on  │
+└────────────────────────┘                          │  ┌────────────────────┐  │                       │   :18443; the real     │
+                                                    │  │ FastMCP server     │  │                       │   data + compute)      │
+                                                    │  │  - 28 tools        │  │                       └────────────────────────┘
                                                     │  └─────────┬──────────┘  │
-                                                    │            │             │
-                                                    │   ┌────────▼─────────┐   │
-                                                    │   │ 14 tool handlers │   │
-                                                    │   └────────┬─────────┘   │
-                                                    │            │             │
-                                ┌───────────────────┼────────────┼─────────────┼───────────────────┐
-                                │                   │            │             │                   │
-                          ┌─────▼─────┐       ┌─────▼──────┐  ┌──▼───────┐  ┌──▼────────────┐      │
-                          │ Catalog   │       │ Keyring    │  │ TTI-O   │  │ fsspec        │      │
-                          │ (SQLite / │       │ (JSON file │  │ library  │  │ (cloud I/O:   │      │
-                          │  Postgres)│       │  on disk)  │  │ (.mpgo   │  │  S3, GCS, …)  │      │
-                          └───────────┘       └────────────┘  │  reader) │  └───────────────┘      │
-                                                              └──────────┘                         │
-                                                                   │                               │
-                                                                   ▼                               │
-                                                          ┌─────────────────┐                      │
-                                                          │ .mpgo files on  │                      │
-                                                          │ disk or cloud   │ ◀────────────────────┘
-                                                          └─────────────────┘
+                                                    │  ┌─────────▼──────────┐  │
+                                                    │  │ ConnectionManager  │  │
+                                                    │  │  (one in-memory    │  │
+                                                    │  │   WorkbenchClient) │  │
+                                                    │  └────────────────────┘  │
+                                                    └──────────────────────────┘
 ```
 
 ### The players
@@ -112,715 +114,490 @@ A bird's-eye picture:
 - **MCP client.** Your chat UI, IDE plugin, or custom script. Starts
   `ttio-mcp` as a subprocess; sends JSON messages down stdin; reads
   replies from stdout.
-- **ttio-mcp.** A Python package. Its entry point is `serve()` in
-  `src/ttio_mcp/server.py`. It builds an `mcp.server.lowlevel.Server`,
-  registers the 14 tool handlers, and runs the stdio loop.
-- **Catalog.** A small SQL database (SQLite by default, Postgres
-  works too). Seven tables: `users`, `files`, `studies`, `runs`,
-  `identifications`, `quantifications`, `provenance_records`. The
-  schema is managed by **Alembic** migrations.
-- **Keyring.** A JSON file on disk whose path you control via the
-  `TTIO_KEYRING_PATH` environment variable. Maps a short `key_id`
-  like `"demo"` to key material plus an `algorithm` tag. Two
-  algorithms are recognised: `"AES-256-GCM"` (exactly 32 bytes, used
-  by encrypt / decrypt / push) and `"hmac-sha256"` (variable-length
-  non-empty, used by sign / verify). Each tool pins the algorithm it
-  expects, so an AES key cannot be used to sign and an HMAC key
-  cannot be used to encrypt.
-- **TTI-O library.** The Python package `mpeg-o` does all the real
-  `.mpgo` reading, writing, encrypting, decrypting. Our server is
-  mostly orchestration — it decides *when* to call TTI-O, and what
-  to persist afterwards.
-- **fsspec.** The Python filesystem abstraction that lets the same
-  code open a local file, an S3 object, a GCS object, or an Azure
-  blob. Only used when a URI is remote.
-
-### The catalog pattern
-
-The key design choice: **files stay where they are**. The server
-never copies a `.mpgo` into the database. It reads each file once
-(when you register it), pulls out the metadata a user would want to
-search on, and stores **only that metadata**. The raw spectrum bytes
-stay on disk or in cloud storage.
-
-- If the file moves or changes, you re-register it (or call
-  `ttio_reverify` to detect drift).
-- If the file is deleted out from under the server, the catalog row
-  still exists — `ttio_reverify` will flag it as unresolvable.
-- If you need an actual spectrum in the chat, `ttio_get_spectrum`
-  reopens the file, pulls one spectrum by index, downsamples it to
-  fit a chat-sized response, and returns channel arrays plus
-  metadata.
-
-Why this matters in practice: registering a 2 GB cloud-hosted `.mpgo`
-takes about as long as streaming 2 GB through the server once (to
-hash it). After that, every subsequent query is a database lookup —
-no re-download, no re-parse.
+- **ttio-mcp.** A Python package built on **FastMCP**. Its entry point
+  is `main()` in `src/ttio_mcp/server.py`, exposed as the `ttio-mcp`
+  console script. On startup it builds the FastMCP app, registers the
+  seven tool modules, and — if a URL and token are configured —
+  pre-connects to the workbench.
+- **ConnectionManager.** Owns at most one authenticated
+  `ttio.workbench.WorkbenchClient`. The session token lives **in memory
+  only** and is never written to disk. There is no catalog, no database,
+  and no keyring in this server.
+- **tti-workbench-server.** The separate long-running service that holds
+  the actual containers, runs queries and jobs, and brokers transfers.
+  `ttio-mcp` is just one of its clients (the workbench's own browser UI,
+  `tio-browser`, is another). You must have a reachable workbench
+  instance for this server to do anything.
+- **ttio SDK.** The Python package `ttio` (installed automatically as a
+  dependency) provides the `ttio.workbench` client used to talk to the
+  server, plus the `ttio.SpectralDataset` reader the Data tools use on
+  local `.tio` files.
 
 ### What a tool call looks like
 
 Let's trace one example end to end. The MCP client calls
-`ttio_get_spectrum` with:
+`ttio_containers_list` with `{"project": "demo", "limit": 50}`:
 
-```json
-{ "run_id": 7, "spectrum_index": 42 }
-```
+1. FastMCP parses the JSON-RPC request and dispatches to the registered
+   handler in `src/ttio_mcp/tools/containers.py`.
+2. The handler asks the `ConnectionManager` for the active client. If
+   nobody has logged in (and no headless token is configured), it
+   returns an error telling the LLM to call `ttio_login`.
+3. The handler calls `client.containers().list(...)` on the
+   `WorkbenchClient`, which issues an authenticated HTTPS request to the
+   workbench on the user's behalf.
+4. The workbench returns a page of container rows. The handler shapes
+   them into a compact dict (`containers[]`, `next_cursor`, `has_more`)
+   and returns it.
+5. FastMCP serialises the dict to JSON text and sends it back over
+   stdout.
 
-1. The MCP SDK on our side parses the JSON-RPC request and calls the
-   registered `call_tool` handler in `src/ttio_mcp/tools/__init__.py`.
-2. That dispatcher looks up the handler by name — here
-   `ttio_mcp.tools.get_spectrum.handle` — and checks whether it
-   accepts a `keyring` argument. It does, so the dispatcher hands
-   over a reference to the loaded keyring.
-3. The handler asks the catalog: "What file does run 7 belong to?"
-   The database answers with the file's URI (`file:///...` or
-   `s3://...`) and some metadata.
-4. If the file is marked `encrypted=true`, the handler requires a
-   `key_id` argument. Absent one, it returns `key_required`. Present
-   one, it resolves the key through the keyring **in-process** and
-   calls TTI-O to decrypt in-memory.
-5. The handler calls `mpeg_o.SpectralDataset.open(...)` — either with
-   a local path or with an fsspec-backed stream for cloud URIs — and
-   asks TTI-O for spectrum 42.
-6. The handler downsamples arrays past `max_points` (default 1000),
-   collects metadata, builds a JSON response, closes the dataset, and
-   returns.
-7. The dispatcher wraps the result in `{"ok": true, "data": {...}}`
-   and hands it to the MCP SDK, which sends it back over stdout.
+Every other tool is a variation on this: check the session, call the
+`ttio.workbench` client, shape the response. The **Data** tools are the
+exception — they read a local `.tio` file directly via
+`ttio.SpectralDataset` and do **not** require an active workbench
+session.
 
-Every other tool is a variation on this pattern: do a database
-lookup, maybe do disk/cloud I/O, return JSON.
+### Why no secret ever crosses the MCP wire
 
-### Why the key never crosses the wire
-
-A keyring is a JSON file on the same machine as the server. The MCP
-client sends a **short name** like `"demo"` — never the key itself.
-The server resolves that name to raw bytes in its own memory, hands
-those bytes to TTI-O for encrypt/decrypt, and throws the response
-back to the client with only the `key_id` string in it. The client
-never sees, handles, or is able to exfiltrate the key bytes through
-the MCP protocol.
-
-This is why the keyring file lives on the server host and why you
-should not check it into version control.
+The MCP client sends a **username, password, and TOTP code** to
+`ttio_login` (or you configure an API key in the *server's* environment
+for headless use). The resulting session token is held in the
+`ConnectionManager`'s memory for the life of the process and is never
+echoed back to the client, never persisted to disk, and never passed as
+a tool result. `ttio_logout` drops it; killing the process drops it.
 
 ### What the server does *not* do
 
-- **It does not store spectrum bytes.** Ever. The catalog only holds
-  metadata.
-- **It does not authenticate users.** The `as_user` parameter is a
-  string that must match a pre-provisioned row in the `users` table.
-  There is no password, no token, no OIDC. For single-user installs
-  this is fine — everything runs as `system`. Multi-user work is
-  tracked for a later milestone.
-- **It does not expose HTTP.** stdio only. If you need network
-  access, run the server inside a remote-access tool (SSH, a
-  VS Code Remote session, etc.) or behind an MCP-over-HTTP proxy.
-- **It does not encrypt files already in the cloud.**
-  `ttio_encrypt_file` / `ttio_decrypt_file` are **local-only** — a
-  cloud URI returns `remote_not_supported`. For publishing a fresh
-  local file, use `ttio_push_file` with a `key_id` — the file is
-  encrypted locally into a temp copy and only the ciphertext is
-  uploaded. For an object that already sits in the cloud, the
-  workflow is manual: pull it down, encrypt locally, push back.
+- **It does not store data.** There is no catalog and no database. All
+  state lives on the workbench server; `ttio-mcp` is stateless between
+  process restarts apart from the in-memory session.
+- **It does not expose admin or destructive tools.** User management,
+  groups, operations dashboard, KEK rotation, pipeline registration, and
+  container delete are all intentionally absent. See the "Not exposed"
+  section of [docs/tools.md](docs/tools.md).
+- **It does not expose HTTP or SSE.** The MCP transport is stdio only.
+  If you need an LLM on a different machine to use it, run `ttio-mcp` on
+  the *same* machine as the MCP client and let *that* machine reach the
+  workbench over the network (see [Deployment options](#deployment-options)).
 
 ---
 
 ## Before you start
 
-You need, on the machine that will run the server:
+You need, on the machine that will run the server (which is the same
+machine that runs the MCP client):
 
 | Requirement | How to check |
 |---|---|
 | **Python 3.11 or 3.12** | `python3 --version` |
 | **pip** (comes with Python) | `python3 -m pip --version` |
 | **git** | `git --version` |
-| **A terminal** | bash, zsh, PowerShell — any of them is fine. |
-| **~500 MB free disk** | For the virtual environment and Python wheels. The catalog itself is tiny. |
+| **A C toolchain** | `cc --version` — the `ttio` SDK is built from source on install (`build-essential` on Debian/Ubuntu, the Xcode Command Line Tools on macOS). |
+| **A terminal** | bash, zsh, PowerShell — any of them. |
+| **A reachable tti-workbench-server (v1.1.0+)** | You should be able to open its URL (e.g. `https://wb.example.com:18443`) and have credentials (a username + password + TOTP, or an API key). |
+| **~500 MB free disk** | For the virtual environment and Python wheels. |
 
-If you want the server to read cloud files (S3, Google Cloud Storage,
-Azure Blob Storage), also install credentials for whichever cloud you
-use — the usual `aws configure`, `gcloud auth`, `az login` flows all
-work. The server reads credentials through the normal environment
-variables and profile files.
+If you want to try it against Claude Code specifically, install Claude
+Code and run `claude --version` to make sure it's on your PATH.
 
-If you want to try it against Claude Code specifically, install
-Claude Code and run `claude --version` to make sure it's on your
-PATH.
+You do **not** need a database, a cloud account, or a keyring for this
+server — those belonged to the old architecture.
 
 ---
 
 ## Quickstart
 
-For the impatient. This drops a single-user, local-only, unencrypted
-install into `~/ttio-mcp`.
+For the impatient. This installs `ttio-mcp` and wires it into Claude
+Code, pointed at a workbench you can already reach.
 
 ```bash
-# 1. Clone and enter the repo
-git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git ~/ttio-mcp
-cd ~/ttio-mcp
+# 1. Install the pinned release (builds the ttio SDK from source)
+pip install "ttio-mcp @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
 
-# 2. Create a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
+# 2. Point it at your workbench
+export TTIO_WB_URL="https://wb.example.com:18443"
 
-# 3. Install the package and its dev tools
-pip install -e ".[dev]"
-
-# 4. Create the catalog database
-alembic upgrade head
-
-# 5. Verify the server launches
-ttio-mcp <<< '' ; echo "exit code: $?"   # exits 0 on clean EOF
-
-# 6. Wire it into Claude Code
-claude mcp add ttio-mcp -- "$(pwd)/.venv/bin/ttio-mcp"
+# 3. Wire it into Claude Code
+claude mcp add ttio-mcp -- ttio-mcp
 ```
 
-You can now ask Claude to call `ttio_register_file`, etc.
+Then, from the LLM, call `ttio_login` with your username, password, and
+current TOTP code — or set `TTIO_WB_TOKEN` (an API key) before step 3 to
+auto-connect with no login call.
 
-The rest of this guide explains each step in detail and covers the
-multi-user, cloud, and encryption setups.
+The rest of this guide explains each step in detail and covers headless,
+multi-user, and encrypted-transfer setups.
 
 ---
 
 ## Step-by-step install
 
-### 1. Clone the repository
+### Option A — pip install the pinned release (recommended)
 
-Pick a location where you want the server and its code to live. The
-code and the virtual environment together take about 500 MB; the
-catalog file is kilobytes unless you register thousands of `.mpgo`s.
+`ttio-mcp` is **not** published to PyPI; install it straight from the
+tagged GitHub release:
 
 ```bash
-git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git ~/ttio-mcp
-cd ~/ttio-mcp
+pip install "ttio-mcp @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
 ```
 
-### 2. Create a virtual environment
+This installs the `ttio-mcp` console script and pulls its pinned
+`ttio[network,crypto]` dependency. Because `ttio` is built from source,
+the install needs `git` and a C toolchain (see [Before you
+start](#before-you-start)); the first install takes a minute or two.
 
-A virtual environment is a private Python installation just for this
-project. It keeps the server's dependencies separate from system
-Python so upgrades can't break your OS.
+To enable the optional transfer extras, request them by name:
 
 ```bash
+# post-quantum transfers (pqc, ML-KEM-1024) and/or remote-.tio URLs (cloud)
+pip install "ttio-mcp[pqc] @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
+```
+
+> Installing into a **virtual environment** is strongly recommended so
+> the server's dependencies don't collide with system Python:
+>
+> ```bash
+> python3 -m venv ~/ttio-mcp-venv
+> source ~/ttio-mcp-venv/bin/activate     # Windows: ~\ttio-mcp-venv\Scripts\Activate.ps1
+> pip install "ttio-mcp @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@v0.9.0"
+> ```
+>
+> If you use a venv, the console script lives at
+> `~/ttio-mcp-venv/bin/ttio-mcp` — use that **full path** when you wire
+> the server into a client, because the client won't inherit your shell's
+> venv activation.
+
+### Option B — from a clone (development)
+
+```bash
+git clone https://github.com/DTW-Thalion/TTIO-MCP-Server.git
+cd TTIO-MCP-Server
+git checkout v0.9.0
 python3 -m venv .venv
-```
-
-Activate it in every shell where you want to run `ttio-mcp` or its
-commands:
-
-```bash
-source .venv/bin/activate         # macOS / Linux
-.venv\Scripts\Activate.ps1        # Windows PowerShell
-.venv\Scripts\activate.bat        # Windows cmd.exe
-```
-
-Your prompt should now start with `(.venv)` — that's how you know
-it's active. Everything that follows assumes the venv is active.
-
-### 3. Install the package
-
-```bash
+source .venv/bin/activate                 # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
 
-What this does:
-
-- `-e` makes it an **editable** install — Python imports the source
-  tree directly, so edits show up without reinstalling.
-- `.[dev]` picks up the `dev` extras from `pyproject.toml` —
-  `pytest`, `ruff`, and `mypy`, used for development.
-- The `mpeg-o` Python package comes from a git tag
-  (`v1.1.1` as of this release); pip resolves it directly from
-  GitHub. You'll see it being cloned and built on first install —
-  this takes a minute or two depending on your network.
-
-If you want cloud support, install the cloud extra too:
+### Verify the install
 
 ```bash
-pip install -e ".[dev,cloud]"
+pytest -q          # expect: 55 passed, 12 skipped
+ruff check src tests
 ```
 
-This adds `s3fs` and `fsspec`, which the server uses to stream `s3://`
-and other remote URIs.
-
-### 4. Verify the tests pass
-
-```bash
-pytest -q
-```
-
-You should see a line like `115 passed in 10s`. If any test fails, stop
-and look at the error — something in your environment is off (wrong
-Python version, missing system library, corrupt clone). See
-[Troubleshooting](#troubleshooting).
-
-### 5. Verify the linter passes
-
-```bash
-ruff check .
-```
-
-Should print `All checks passed!`. Again, a failure here indicates an
-environment problem, not something for you to fix in the code.
+The 12 skipped tests are the opt-in live integration suite; they only
+run against a real workbench (see [First end-to-end
+test](#first-end-to-end-test)). A failure in the other 55 means your
+environment is off (wrong Python version, missing C toolchain, the
+`ttio` SDK couldn't build) — see [Troubleshooting](#troubleshooting).
 
 ---
 
 ## Configure the environment
 
-The server is controlled by **four environment variables**. All of
-them are optional — the defaults give you a working single-user,
-local-only install — but you'll want to set at least one of them if
-you deploy beyond a single developer's laptop.
+The server is controlled entirely by **environment variables**, read
+from the process that launches `ttio-mcp`. No secrets are ever accepted
+through MCP tool arguments, and nothing is written to disk.
 
 | Variable | What it controls | Default |
 |---|---|---|
-| `TTIO_MCP_DB_URL` | Which database holds the catalog. | `sqlite:///ttio_mcp.db` (a file in the current directory) |
-| `TTIO_MCP_FSSPEC_KWARGS` | Default options passed to every cloud-filesystem call. | *(none)* |
-| `TTIO_KEYRING_PATH` | Path to the JSON file that holds encryption keys. | *(none — encryption tools refuse to run)* |
-| `TTIO_MCP_INTAKE_DIR` | Directory where `ttio_launch_uploader` stages files picked by the user. | *(none — the uploader tool refuses to run)* |
+| `TTIO_WB_URL` | Workbench server URL, e.g. `https://wb.example.com:18443` or `wss://wb.example.com:18443/transport`. Required for headless auto-connect; may also be passed per-call to `ttio_login`. | *(unset)* |
+| `TTIO_WB_TOKEN` | API key (`ttiowbk_...`) or bearer token (`ttiowbs_...`) for headless auto-connect at startup. | *(unset)* |
+| `TTIO_WB_USERNAME` | Optional username label attached to a headless session (informational only). | *(unset)* |
+| `TTIO_MCP_EXPORT_DIR` | Directory where `ttio_dataset_export` writes parquet/csv/json output. | `~/.local/state/ttio-mcp/exports` |
+| `TTIO_MCP_CACHE_DIR` | Directory for intermediate cache files. | `~/.local/state/ttio-mcp/cache` |
+| `TTIO_MCP_PAGE_SIZE` | Default page size for container-list calls when the caller omits `limit`. | `100` |
 
-Set them **in the shell that launches `ttio-mcp`**. If you're
-wiring the server into Claude Code or another client, you'll set
-them in the same shell where you run `claude mcp add ...`.
+> **Where to set them.** MCP clients launch `ttio-mcp` as a subprocess
+> and capture the environment **at the moment the client starts it** —
+> they do **not** forward variables you export later. So set these in the
+> same shell that runs `claude mcp add ...`, or bake them into the
+> client's MCP config (see [Connect it to a
+> client](#connect-it-to-a-client)).
 
 Full reference: [docs/configuration.md](docs/configuration.md).
 
-### Picking a database
+### Export and cache directories
 
-For a single user on a laptop, the default SQLite file is fine. It
-lives next to the repo, backs up easily (just copy the file), and
-needs zero setup.
-
-For a shared server or production use, prefer Postgres. The schema
-is identical; only the URL changes:
+Both default under `~/.local/state/ttio-mcp/` (honouring `XDG_STATE_HOME`
+if set) and are created on first use. Point them somewhere else if you
+want exports collected in a known place or caches on a faster disk:
 
 ```bash
-export TTIO_MCP_DB_URL="postgresql+psycopg://user:pw@host:5432/ttio_mcp"
+export TTIO_MCP_EXPORT_DIR="$HOME/ttio-exports"
+export TTIO_MCP_CACHE_DIR="/var/cache/ttio-mcp"
 ```
 
-Create the empty database in Postgres first (`createdb ttio_mcp`),
-then run `alembic upgrade head` against the new URL.
-
-### Cloud filesystem defaults
-
-Only relevant if you plan to register cloud URIs. Example for a
-private S3 bucket that should use your default AWS credentials:
-
-```bash
-export TTIO_MCP_FSSPEC_KWARGS='{"anon": false}'
-```
-
-For a MinIO / LocalStack / custom-endpoint S3:
-
-```bash
-export TTIO_MCP_FSSPEC_KWARGS='{
-  "anon": false,
-  "client_kwargs": {"endpoint_url": "https://minio.example:9000"}
-}'
-```
-
-For a public bucket:
-
-```bash
-export TTIO_MCP_FSSPEC_KWARGS='{"anon": true}'
-```
-
-Individual tool calls can override any key — so you can have anon-default
-and pass `{"anon": false}` for a specific private file.
-
-### Setting up a keyring
-
-Only relevant if you plan to use the encryption tools. Here's the
-full recipe.
-
-**Step 1** — pick a path for the keyring file and add it to
-`.gitignore` if it's anywhere inside a git repo.
-
-```bash
-KEYRING=~/.config/ttio-mcp/keyring.json
-mkdir -p "$(dirname "$KEYRING")"
-chmod 700 "$(dirname "$KEYRING")"
-```
-
-**Step 2** — generate a key and write it into the file.
-
-```bash
-NEW_KEY=$(python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')
-
-cat > "$KEYRING" <<EOF
-{
-  "keys": {
-    "demo": {
-      "value": "$NEW_KEY",
-      "algorithm": "AES-256-GCM",
-      "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-      "description": "first demo key"
-    }
-  }
-}
-EOF
-
-chmod 600 "$KEYRING"
-```
-
-**Step 3** — point the server at it:
-
-```bash
-export TTIO_KEYRING_PATH="$KEYRING"
-```
-
-You can add more keys to the same file later — just add another
-entry under `"keys"`. Each key has its own `key_id` (the map key),
-its own base64 `value`, and an `algorithm` tag.
-
-**Step 4 (optional)** — add an HMAC-SHA256 key for signing. Signing
-keys use a different algorithm tag; the server refuses to cross the
-streams:
-
-```bash
-SIGN_KEY=$(python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')
-
-python3 - <<PY
-import json, pathlib
-p = pathlib.Path("$KEYRING")
-doc = json.loads(p.read_text())
-doc["keys"]["release-signer"] = {
-    "value": "$SIGN_KEY",
-    "algorithm": "hmac-sha256",
-    "description": "HMAC-SHA256 release signing key",
-}
-p.write_text(json.dumps(doc, indent=2))
-PY
-```
-
-`hmac-sha256` keys can be any non-empty length — 32 bytes is the
-conventional HMAC-SHA256 key size and what TTI-O's own tests use, so
-it's a sensible default. `AES-256-GCM` keys must be exactly 32 bytes.
-
-**Do not commit this file anywhere.** If you lose an encryption key,
-files encrypted with it cannot be recovered. If you lose a signing
-key, you can no longer prove integrity of anything signed with it
-(and you also can't sign anything new that verifies against the same
-key). If you leak either, treat the protected files as compromised
-and re-key.
-
-### Setting up the intake directory
-
-`ttio_launch_uploader` pops a tkinter file-picker on the same
-desktop the server is running on (MCP stdio is same-machine by
-definition) and copies the chosen file into whatever directory
-`TTIO_MCP_INTAKE_DIR` points to. Without that env var set, the tool
-refuses to run.
-
-```bash
-export TTIO_MCP_INTAKE_DIR="$HOME/mpeg-o/intake"
-```
-
-The server auto-creates the directory on first use, so you don't need
-`mkdir -p`. A same-name collision (`sample.mpgo` already in intake)
-appends a UTC timestamp (`sample-20260424T120000Z.mpgo`); a second
-collision tacks on an integer. The original on disk is never touched.
-
-After a file is staged, call `ttio_register_file` against the
-returned `destination` to bring it into the catalog — the uploader
-itself writes no catalog rows.
-
-**Display required.** The tkinter picker and progress window need an
-active display session:
-- On Linux, an `$DISPLAY` or `$WAYLAND_DISPLAY`.
-- On macOS, the user's logged-in desktop session.
-- On Windows, just run the server natively, or run it inside WSL2
-  with WSLg (bundled with Windows 10 Build 19044+ and Windows 11).
-
-Headless deployments (SSH-only hosts, containers without an X server)
-will get `no_display` back — for those, bypass the uploader and point
-`ttio_register_file` straight at your existing file.
+Callers can override the export directory per call with the `out_dir`
+parameter on `ttio_dataset_export`.
 
 ---
 
-## Bootstrap the catalog (database)
+## Authenticate
 
-With environment variables set (or defaulted), initialise the
-database:
+There are two ways to establish a workbench session. Tokens live in the
+server process's memory only and are never written to disk.
 
-```bash
-alembic upgrade head
+### Interactive login (recommended for desktop use)
+
+Leave `TTIO_WB_TOKEN` unset. After the server starts, call `ttio_login`
+from the LLM client with a username, password, and the current 6-digit
+TOTP code:
+
+```jsonc
+// tool call: ttio_login
+{
+  "username": "alice",
+  "password": "hunter2",
+  "totp": "123456",
+  "url": "https://wb.example.com:18443"   // optional; defaults to TTIO_WB_URL
+}
 ```
 
-What just happened:
+The session token expires after roughly 24 hours; call `ttio_login`
+again to refresh it. `ttio_logout` drops the in-memory session.
 
-- Alembic read `alembic.ini` and `migrations/env.py` to find the DB
-  URL (via your env var) and the schema definition.
-- It created the seven tables.
-- It inserted a single row in `users`: `{id: 1, name: "system"}`.
-  All future catalog writes default to this user unless you pass an
-  explicit `as_user`.
-- It recorded the current migration version in a metadata table so
-  it knows what to do next time.
+### Headless / API-key auto-connect (recommended for unattended use)
 
-You can always inspect what it did:
+Set both `TTIO_WB_URL` and `TTIO_WB_TOKEN` before launching `ttio-mcp`.
+The server establishes a session at startup and no `ttio_login` call is
+needed:
 
 ```bash
-sqlite3 ttio_mcp.db ".tables"
-sqlite3 ttio_mcp.db "SELECT * FROM users;"
+export TTIO_WB_URL="https://wb.example.com:18443"
+export TTIO_WB_TOKEN="ttiowbk_abc123..."
+ttio-mcp
 ```
 
-To completely reset (destructive — wipes all catalog data):
+- **API keys** (`ttiowbk_...`) are issued by a workbench administrator
+  from the Operations Dashboard. They do not expire on their own but can
+  be revoked server-side — the right choice for unattended deployments.
+- **Bearer tokens** (`ttiowbs_...`) are short-lived session tokens from a
+  prior login and are less suitable for headless use.
 
-```bash
-alembic downgrade base
-```
+If auto-connect fails (bad URL, unreachable server, revoked key), the
+server still starts; `ttio_connection_status` reports the disconnected
+state and you can recover by calling `ttio_login`.
+
+Check status at any time with `ttio_connection_status` or `ttio_whoami`.
 
 ---
 
 ## Connect it to a client
 
-The server doesn't speak a network protocol — an MCP client starts
-it as a child process and talks to it over stdin/stdout. Depending
-on which client you use, the setup differs slightly.
+The server speaks stdio — an MCP client starts it as a child process and
+talks over stdin/stdout. Setup differs slightly per client.
 
 ### Claude Code
 
 ```bash
-claude mcp add ttio-mcp -- "$(pwd)/.venv/bin/ttio-mcp"
+claude mcp add ttio-mcp -- ttio-mcp
+```
+
+If you installed into a virtual environment, use the **full path** to
+the console script so Claude can launch it without your venv activated:
+
+```bash
+claude mcp add ttio-mcp -- /home/you/ttio-mcp-venv/bin/ttio-mcp
 ```
 
 Notes:
 
-- Use the **full path** to the `ttio-mcp` binary inside your venv.
-  Claude will launch this directly — it won't inherit your shell's
-  venv activation.
-- Environment variables (`TTIO_MCP_DB_URL` etc.) need to be visible
-  **in the process that runs `claude mcp add ...`** so Claude
-  captures them. Alternatively, write them into Claude Code's
-  settings in `.mcp.json`.
-- Verify with `claude mcp list` — you should see `ttio-mcp` and a
-  green status.
+- Environment variables (`TTIO_WB_URL`, `TTIO_WB_TOKEN`, …) must be
+  visible **in the shell that runs `claude mcp add ...`** so Claude
+  captures them, or written into Claude Code's MCP config. To set them
+  inline:
+
+  ```bash
+  claude mcp add ttio-mcp \
+    --env TTIO_WB_URL=https://wb.example.com:18443 \
+    --env TTIO_WB_TOKEN=ttiowbk_abc123... \
+    -- ttio-mcp
+  ```
+
+- Verify with `claude mcp list` — you should see `ttio-mcp` with a green
+  status.
+
+### Claude Desktop / other JSON-config clients
+
+Clients that use a JSON config file (e.g. `claude_desktop_config.json`,
+or a project `.mcp.json`) take a command, args, and an env map:
+
+```jsonc
+{
+  "mcpServers": {
+    "ttio-mcp": {
+      "command": "/home/you/ttio-mcp-venv/bin/ttio-mcp",
+      "args": [],
+      "env": {
+        "TTIO_WB_URL": "https://wb.example.com:18443",
+        "TTIO_WB_TOKEN": "ttiowbk_abc123..."
+      }
+    }
+  }
+}
+```
+
+Restart the client after editing the file.
 
 ### Generic MCP client (custom script)
 
-If you're writing your own client using the official `mcp` Python
-SDK, start the server as a subprocess and drive it with
-`StdioServerParameters`. Minimal example:
+Using the official `mcp` Python SDK, start the server as a subprocess
+and drive it with `StdioServerParameters`:
 
 ```python
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 params = StdioServerParameters(
-    command="/home/you/ttio-mcp/.venv/bin/ttio-mcp",
+    command="/home/you/ttio-mcp-venv/bin/ttio-mcp",
     args=[],
-    env={"TTIO_MCP_DB_URL": "sqlite:////tmp/cat.db"},
+    env={"TTIO_WB_URL": "https://wb.example.com:18443"},
 )
 
 async def run():
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            result = await session.list_tools()
-            print([t.name for t in result.tools])
+            tools = await session.list_tools()
+            print([t.name for t in tools.tools])   # 28 ttio_* tools
 ```
 
 ### IDE plugins
 
-Most MCP-capable IDE plugins want two things: a **command to run**
-and a **set of environment variables**. Point the command at the
-same `.venv/bin/ttio-mcp` full path. Everything else is the same
-as the Claude Code wire-up.
+Most MCP-capable IDE plugins want a **command** and an **env map**. Point
+the command at the `ttio-mcp` console script (full path if in a venv) and
+set the `TTIO_WB_*` variables — same as the Claude Code wire-up.
 
 ---
 
 ## First end-to-end test
 
-Once the server is connected, you can ask the client to exercise it.
-A good smoke test, end to end:
+Once the server is connected to a client and authenticated, exercise it
+end to end:
 
-1. Ask the client to call `ttio_list_files` (no arguments). You
-   should get `{"total": 0, "limit": 50, "offset": 0, "files": []}` —
-   the catalog is empty, which is correct.
-2. Pick any `.mpgo` fixture file (the TTI-O repo ships a few under
-   `tests/fixtures/`) and ask the client to call
-   `ttio_register_file` with its absolute path as `uri`. You should
-   get back a `file_id`, counts of studies/runs/identifications, and
-   `was_update: false`.
-3. Call `ttio_list_files` again — the file is now in the catalog.
-4. Call `ttio_get_file` with the `id` you got back — full record.
-5. Call `ttio_get_spectrum` with `{run_id, spectrum_index: 0}` — the
-   server reopens the file and pulls one spectrum.
-6. If you configured a keyring, call `ttio_encrypt_file` with
-   `{id, key_id: "demo"}`. The file on disk now has its intensity
-   channel ciphered. Call `ttio_get_spectrum` again without a
-   `key_id` and you should get `key_required`; pass the same
-   `key_id` and you get plaintext back. Finally call
-   `ttio_decrypt_file` to restore the file.
-7. If you have cloud credentials and want to publish a file, call
-   `ttio_push_file` with `{local_uri: "/path/to/local.mpgo",
-   remote_uri: "s3://your-bucket/path/sample.mpgo"}` — the server
-   streams the bytes up and registers the uploaded object under its
-   `s3://` URI. Add `key_id: "demo"` to have the ciphertext land in
-   the bucket instead of plaintext.
-8. If you added an `hmac-sha256` key to the keyring, call
-   `ttio_sign_file` with `{id, key_id: "release-signer"}` — the
-   server stamps every `signal_channels/*_values` dataset with an
-   HMAC-SHA256 tag. Call `ttio_verify_signature` with the same key
-   and you should get `valid: true` plus a per-dataset verdict map.
-   Pass a different `key_id` and `valid` flips to `false` without
-   raising.
-9. If you set `TTIO_MCP_INTAKE_DIR` and the server process can reach
-   a display (local desktop, or WSLg on Windows), ask the client to
-   call `ttio_launch_uploader`. A file picker opens on your desktop;
-   choose any importable file (`.mpgo`, `.mzml`, `.nmrml`, `.imzml`,
-   `.mztab`) and watch the progress window stream it into the intake
-   directory. The tool returns `{source, destination, format,
-   size_bytes}` — follow up with `ttio_register_file` against the
-   `destination` to bring the staged file into the catalog.
+1. Call `ttio_connection_status` — confirm `connected: true` with your
+   username and projects. (If headless auto-connect is configured this is
+   already true; otherwise call `ttio_login` first.)
+2. Call `ttio_whoami` — see your username, projects, and capabilities.
+3. Call `ttio_containers_list` (optionally with a `project` filter) — a
+   page of containers visible to your account.
+4. Pick a container URI from that list and call `ttio_container_manifest`
+   with it — the HDF5 manifest projection (runs, counts, ISA ids).
+5. Run a cohort query: `ttio_cohort_preview_count` with
+   `{"select": "containers", "predicate": {...}}` to get a row count,
+   then `ttio_cohort_query` to fetch rows.
+6. Download a container to a local file:
+   `ttio_download` with `{"container_uri": "...", "out_path": "/tmp/x.tio"}`
+   (default `mode: plain`).
+7. Inspect the downloaded file with the **Data** tools (these need no
+   session): `ttio_dataset_summary` with `{"path": "/tmp/x.tio"}`, then
+   `ttio_dataset_read` with `{"path": "/tmp/x.tio", "what": "runs"}`.
+8. Export a spectrum's full arrays: `ttio_dataset_export` with
+   `{"path": "/tmp/x.tio", "run": "<run-id>", "index": 0, "fmt": "parquet"}`.
+   The file lands in `TTIO_MCP_EXPORT_DIR`.
 
-That's the full round trip. Everything else is filters, pagination,
-and edge cases.
+That's the core round trip. Jobs, sessions, and the encrypted transfer
+modes (`byok`, `server-kek`, `pqc`) follow the same pattern; see
+[docs/tools.md](docs/tools.md) for every tool's parameters.
 
-### Publishing to the cloud
+### Running the live integration suite
 
-The server treats cloud encryption in three tiers:
+The 12 skipped tests become a real conformance check against a running
+workbench. From a development clone:
 
-1. **Fresh file, not yet uploaded.** Call `ttio_push_file` with
-   `key_id` — a temp copy is encrypted locally, the ciphertext is
-   uploaded, the local source is untouched, and the catalog row is
-   marked `encrypted=true`. One upload, no wasted bandwidth.
-2. **File already in the cloud, needs post-hoc encryption.** Object
-   stores are immutable at the object level — there is no "encrypt
-   in place" for a remote object. The workflow is manual:
-   (a) pull the object down with your cloud client,
-   (b) run `ttio_encrypt_file` on the local copy,
-   (c) re-upload with `ttio_push_file` (no `key_id`, since the bytes
-   are already ciphertext) to a new key.
-3. **File already in the cloud, plaintext reads only.** Just
-   `ttio_register_file` the `s3://` URI and use it through the query
-   tools. Nothing to encrypt.
+```bash
+TTIO_MCP_LIVE=1 \
+TTIO_WB_URL="wss://wb.example.com:18443/transport" \
+TTIO_WB_TOKEN="ttiowbk_abc123..." \
+pytest tests/integration
+```
 
-`ttio_encrypt_file` and `ttio_decrypt_file` refuse cloud URIs with
-`remote_not_supported` on purpose — doing it server-side would cost
-a download plus an upload per call, and the server has no way to
-cache between requests.
-
-### Signing `.mpgo` files
-
-Signing stamps each `signal_channels/*_values` dataset with an
-HMAC-SHA256 tag (stored in the `@ttio_signature` HDF5 attribute on
-that dataset). Anyone who holds the matching key can later run
-`ttio_verify_signature` to confirm that the dataset bytes have not
-changed since signing.
-
-Signing is **local-only** and operates on **plaintext** values — a
-signed file can be encrypted afterwards for transport, but signing an
-already-encrypted file is rejected (`already_encrypted`): the
-canonical byte layout HMAC depends on the original plaintext values.
-
-Minimal round-trip:
-
-1. Register the file (local path): `ttio_register_file`.
-2. Sign it with an `hmac-sha256` key from the keyring:
-
-   ```json
-   {"id": 1, "key_id": "release-signer"}
-   ```
-
-   `ttio_sign_file` responds with `signed_datasets: ["/study/.../intensity_values", ...]`
-   and fresh `file_sha256` / `content_sha256`.
-3. Verify at any later point with the same `key_id`:
-
-   ```json
-   {"id": 1, "key_id": "release-signer"}
-   ```
-
-   `ttio_verify_signature` returns `valid: true` if every signed
-   dataset verifies. Individual verdicts appear in `verified_datasets`
-   — if some are `false`, those particular datasets have been
-   tampered with (or are being verified with the wrong key).
-
-**Re-signing with a new key.** Call `ttio_sign_file` again with the
-new `key_id`; the `@ttio_signature` attribute on each dataset is
-overwritten. There's no atomic rotate — file attributes only ever
-hold one signature, and it's always the most recent one.
-
-**Signing for cloud distribution.** Sign the local file, then
-`ttio_push_file` (with or without encryption) to upload. Verification
-against a cloud URI is **not** supported — download the object
-locally, re-register, then verify. This keeps the verify path on
-byte-stable h5py reads.
-
-**Unsigned files raise a distinct error.** Calling
-`ttio_verify_signature` on a file whose datasets carry no
-`@ttio_signature` attributes raises `not_signed`, not `valid: false`.
-Callers should treat `not_signed` as "no claim to verify" rather than
-"failed verification."
+`tests/integration/test_live_smoke.py` covers the read surface plus a
+data round-trip; `test_live_full.py` covers the full tool matrix
+including the encrypted transfer modes. See the test files for the full
+list of accepted credential/fixture environment variables.
 
 ---
 
 ## Upgrading to a new version
 
-When a new version lands:
+### Installed via pip (Option A)
+
+Re-install pinned to the new tag:
 
 ```bash
-cd ~/ttio-mcp
-git pull
-source .venv/bin/activate
-pip install -e ".[dev]"              # re-resolves dependencies
-alembic upgrade head                 # applies any new migrations
-pytest -q                            # sanity check
+pip install --upgrade \
+  "ttio-mcp @ git+https://github.com/DTW-Thalion/TTIO-MCP-Server.git@vX.Y.Z"
 ```
 
-Then restart the client — it needs to relaunch `ttio-mcp` to pick
-up the new code. In Claude Code that's usually just starting a new
-session.
+### Installed from a clone (Option B)
 
-Catalog data is preserved across upgrades. Migrations only add or
-adjust tables; they never drop rows.
+```bash
+cd TTIO-MCP-Server
+git fetch --tags
+git checkout vX.Y.Z
+source .venv/bin/activate
+pip install -e ".[dev]"        # re-resolves dependencies, including ttio
+pytest -q                      # sanity check
+```
+
+Then restart the MCP client so it relaunches `ttio-mcp` with the new
+code. In Claude Code that's usually just starting a new session. There
+is no database or catalog to migrate — the server is stateless apart from
+its in-memory session.
 
 ---
 
-## Deployment options (production-ish)
+## Deployment options
 
-### Single-user laptop
+Because the MCP transport is **stdio**, "deploying" this server means
+making it easy for each user to install it locally and point it at a
+workbench. There is no central daemon to stand up.
 
-Everything in the [Quickstart](#quickstart) — SQLite, no keyring, no
-cloud — is fine. Back up `ttio_mcp.db` periodically.
+### Single user, desktop
 
-### Shared team server
+The [Quickstart](#quickstart) is the whole story: install, set
+`TTIO_WB_URL`, `claude mcp add`, log in interactively. The workbench
+account governs what the LLM can see and do.
 
-- Move the catalog to Postgres (`TTIO_MCP_DB_URL`). One database
-  serves everyone; each user's client launches their own
-  `ttio-mcp` subprocess that connects to the shared DB.
-- Put the server binary on a path accessible to every user, or let
-  each user clone their own copy. The code is stateless — all state
-  lives in the database and the keyring.
-- Provision a row per real user in the `users` table (via direct
-  SQL for now — tooling lands in a later milestone) and pass the
-  name through `as_user`.
+### Unattended / shared host
 
-### Remote / cloud
+- Use an **API key** (`ttiowbk_...`) in `TTIO_WB_TOKEN` so the server
+  auto-connects with no interactive login. Issue a dedicated, least-
+  privilege workbench account for the MCP server rather than reusing a
+  human's credentials.
+- Each MCP client launches its own `ttio-mcp` subprocess. The server is
+  stateless, so multiple users can each run their own instance against
+  the same workbench with their own credentials.
+- Keep the API key out of shell history and version control — inject it
+  through the client's env config or a secrets manager, not a checked-in
+  file.
 
-The server speaks stdio, so a "cloud deployment" usually means one
-of:
+### LLM on a different machine than the workbench
 
-1. **Run the server on a remote host and expose it via SSH.** The
-   client SSHes in and spawns `ttio-mcp` as a remote command. MCP
-   over SSH works fine — stdio passes through untouched.
-2. **Put it behind an MCP-over-HTTP proxy.** Several community
-   proxies exist; they turn stdio into HTTP and back. Consult their
-   documentation for auth and TLS.
+The MCP transport is local (stdio), but the workbench connection is
+ordinary HTTPS/WSS. So:
 
-Either way, make sure:
+- Run `ttio-mcp` **on the same machine as the MCP client**, and make
+  sure that machine can reach the workbench URL over the network
+  (firewall, VPN, TLS as appropriate).
+- There is **no** supported MCP-over-HTTP/SSE mode in v0.9.0 — you cannot
+  run `ttio-mcp` as a shared remote endpoint that multiple LLMs dial
+  into. If you need that, it requires adding a remote transport (a
+  roadmap item), not a config change.
 
-- The keyring file has restrictive permissions (`chmod 600`, owned
-  by the user the server runs as).
-- Cloud credentials are loaded from the environment of the user
-  running `ttio-mcp`, not from MCP tool arguments.
-- `TTIO_MCP_DB_URL` points at a real database with backups. The
-  catalog is the only source of truth about which files the server
-  has seen — losing it means re-hashing every file on the next
-  register call.
+### Security notes
+
+- The workbench session token lives only in the server process's memory
+  and is never written to disk. Killing the process drops it.
+- API keys are bearer credentials: anyone who can read the environment of
+  the `ttio-mcp` process can use the key until it is revoked. Scope the
+  account and rotate keys accordingly.
+- The server exposes no admin or destructive workbench operations, so a
+  compromised LLM session is bounded by the workbench account's non-admin
+  permissions.
 
 ---
 
@@ -828,165 +605,102 @@ Either way, make sure:
 
 ### "command not found: ttio-mcp"
 
-The virtual environment isn't active, or it's active but in a
-different shell. Activate it:
-
-```bash
-source ~/ttio-mcp/.venv/bin/activate
-```
-
-Or invoke the binary directly:
-
-```bash
-~/ttio-mcp/.venv/bin/ttio-mcp
-```
-
-### "sqlalchemy.exc.OperationalError: no such table: files"
-
-You skipped the migration. Run:
-
-```bash
-alembic upgrade head
-```
-
-Then relaunch the client.
-
-### Every register call on a cloud URI fails with `resolve_failed`
-
-Credentials or endpoint config aren't reaching the server. Check:
-
-- Are you running the server in the same shell where you exported
-  `AWS_ACCESS_KEY_ID` (or equivalent)? MCP clients launch the
-  server as a subprocess and won't forward env vars you set after
-  the client started.
-- Is `TTIO_MCP_FSSPEC_KWARGS` valid JSON? The server aborts at
-  startup if it isn't.
-- Does the `cloud` extra actually install in your venv?
-  `python -c "import s3fs; print(s3fs.__version__)"` should print a
-  version.
-
-### `key_required` when reading an encrypted file
-
-Expected. The catalog has `encrypted=true` for that file. Pass
-`key_id` in the `ttio_get_spectrum` call.
-
-### `invalid_keyring`
-
-The JSON keyring file is malformed. Common causes:
-
-- `value` is not base64 (check for stray newlines or quotes).
-- The `algorithm` is missing or unknown (only `"AES-256-GCM"` and
-  `"hmac-sha256"` are recognised).
-- An `AES-256-GCM` entry decodes to something other than 32 bytes.
-- An `hmac-sha256` entry decodes to zero bytes.
-- The outer structure isn't `{"keys": {...}}`.
-
-Re-generate with the one-liner in [Setting up a keyring](#setting-up-a-keyring).
-
-### `algorithm_mismatch`
-
-A tool was given a `key_id` whose stored algorithm doesn't match the
-algorithm the tool requires. Typical triggers:
-
-- Passing an `hmac-sha256` key to `ttio_encrypt_file`,
-  `ttio_decrypt_file`, `ttio_push_file`, or `ttio_get_spectrum`
-  (these want `AES-256-GCM`).
-- Passing an `AES-256-GCM` key to `ttio_sign_file` or
-  `ttio_verify_signature` (these want `hmac-sha256`).
-
-Add a key with the right algorithm tag to the keyring and use its
-`key_id` instead — keys cannot be used across algorithms.
-
-### `ttio_launch_uploader` returns `intake_not_configured`
-
-You haven't set `TTIO_MCP_INTAKE_DIR` in the shell that launched the
-server. MCP clients don't forward env vars you export *after* the
-client starts. Kill the client, export the var, relaunch.
-
-### `ttio_launch_uploader` returns `no_display`
-
-The host the server is running on has no display session for tkinter
-to open a window against. Typical causes:
-
-- SSH without `-X` / `-Y`.
-- A container or CI runner with no X server.
-- WSL1 (no GUI layer) — upgrade to WSL2 on Windows 10 Build 19044+
-  or Windows 11, which ship WSLg.
-
-The uploader can't run headless by design — it's a human-in-the-loop
-tool. For automation, use `ttio_register_file` against a URI you've
-already staged by other means.
-
-### `ttio_launch_uploader` returns `cancelled`
-
-The user closed the file-picker without picking a file. Not an
-error — just retry when they're ready.
+The console script isn't on your PATH. If you installed into a venv,
+either activate it (`source ~/ttio-mcp-venv/bin/activate`) or use the
+full path (`~/ttio-mcp-venv/bin/ttio-mcp`) everywhere — including in
+`claude mcp add`.
 
 ### The client shows "ttio-mcp disconnected" right after starting
 
-The server crashed during startup, probably because an env var
-points at something invalid (bad DB URL, bad fsspec JSON). Run
-`ttio-mcp` directly from a shell — the traceback will print to
-stderr:
+The server crashed during startup. Run it directly from a shell to see
+the traceback on stderr:
 
 ```bash
-source ~/ttio-mcp/.venv/bin/activate
 ttio-mcp
 ```
 
-Press Ctrl-D to give it EOF and let it exit cleanly.
+Press Ctrl-D to give it EOF and let it exit cleanly. A common cause is a
+malformed `TTIO_MCP_PAGE_SIZE` (must be an integer).
 
-### Tests fail on a fresh clone
+### Tools return "Not connected. Call ttio_login …"
 
-Most commonly: the git-based `mpeg-o` dependency couldn't clone
-(firewall, no internet, GitHub down). Run
+No session is established. Either call `ttio_login` from the LLM, or set
+both `TTIO_WB_URL` and `TTIO_WB_TOKEN` **before** the client starts the
+server (clients don't forward env vars you export afterward — re-run
+`claude mcp add` with the vars set, or put them in the client's config).
 
-```bash
-pip install --force-reinstall "mpeg-o @ git+https://github.com/DTW-Thalion/TTI-O.git@v1.1.1#subdirectory=python"
-```
+### Tools return "Session expired. Call ttio_login again"
 
-and watch the output for the actual error.
+Your interactive (password) session passed its ~24h lifetime. Call
+`ttio_login` again. API-key (`ttiowbk_...`) sessions do not expire, so if
+you see this with an API key, the key was likely revoked server-side —
+get a new one from a workbench administrator.
+
+### Headless auto-connect silently doesn't happen
+
+Auto-connect only fires when **both** `TTIO_WB_URL` and `TTIO_WB_TOKEN`
+are set in the launching environment, and it fails quietly if the
+workbench is unreachable or the token is bad. Call
+`ttio_connection_status` to see the state, then check the URL is correct
+and reachable (`curl -I "$TTIO_WB_URL"`) and the key is valid.
+
+### Install fails building the `ttio` SDK
+
+The `ttio` dependency is compiled from source. Make sure `git` and a C
+toolchain are installed (`build-essential` on Debian/Ubuntu, Xcode
+Command Line Tools on macOS), then retry. Watch the pip output for the
+real compiler error.
+
+### A PQC (`pqc` mode) transfer corrupts the connection
+
+This was a real bug fixed in v0.9.0: `liboqs` writes a banner to file
+descriptor 1 (stdout) on import, which would corrupt the JSON-RPC stream.
+The server now reserves stdout exclusively for the protocol and redirects
+stray writes to stderr. If you see protocol corruption on PQC transfers,
+confirm you're on v0.9.0 or later and that `pqc` is installed
+(`pip install "ttio-mcp[pqc] @ git+…"`).
+
+### `ttio_dataset_*` tools fail on a path
+
+The Data tools read a **local** `.tio` file. Make sure the `path` exists
+on the machine running `ttio-mcp` (e.g. a file you fetched with
+`ttio_download`), not a workbench container URI.
 
 ---
 
 ## Uninstall
 
-Clean removal:
-
 ```bash
 # 1. Remove from your MCP client (Claude Code example)
 claude mcp remove ttio-mcp
 
-# 2. Delete the repo (this deletes the venv and the default SQLite catalog)
-rm -rf ~/ttio-mcp
+# 2a. If installed with pip into the active environment
+pip uninstall ttio-mcp
 
-# 3. If you exported env vars in your shell profile, remove them
-# Edit ~/.bashrc / ~/.zshrc / PowerShell profile and delete the TTIO_* lines
+# 2b. If installed into a dedicated venv, just delete it
+rm -rf ~/ttio-mcp-venv
 
-# 4. If you created a keyring outside the repo, delete it
-rm -f ~/.config/ttio-mcp/keyring.json
+# 3. If installed from a clone, delete the repo
+rm -rf ~/TTIO-MCP-Server
 
-# 5. If you configured an intake dir outside the repo, delete it
-rm -rf ~/mpeg-o-intake
+# 4. Remove any exported state (created lazily; safe to delete)
+rm -rf ~/.local/state/ttio-mcp
+
+# 5. If you added TTIO_* lines to a shell profile, remove them
+#    Edit ~/.bashrc / ~/.zshrc / your PowerShell profile.
 ```
 
-If you used Postgres, drop the catalog database separately:
-
-```bash
-dropdb ttio_mcp
-```
-
-That's everything. The TTI-O MCP Server is self-contained to those
-paths — nothing else is installed system-wide, nothing else touches
-system registries.
+The server holds no database, keyring, or catalog, so there is nothing
+else to clean up. Revoke any API key you issued for it from the workbench
+Operations Dashboard if it is no longer needed.
 
 ---
 
 ## Where to go next
 
-- [README.md](README.md) — project summary and milestone status.
+- [README.md](README.md) — project summary and tool overview.
 - [docs/tools.md](docs/tools.md) — reference for every MCP tool.
 - [docs/configuration.md](docs/configuration.md) — full env-var reference.
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each release.
-- Per-milestone handoffs (`HANDOFF*.md`) if you want the historical
-  design decisions behind each milestone.
+- [tti-workbench-server](https://github.com/DTW-Thalion/tti-workbench-server)
+  — the server this client talks to.
