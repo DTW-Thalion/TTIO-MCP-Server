@@ -80,6 +80,17 @@ class Config:
             oauth_exchange_audience=os.environ.get("TTIO_MCP_OAUTH_EXCHANGE_AUDIENCE", "tti-workbench"),
             oauth_client_id=os.environ.get("TTIO_MCP_OAUTH_CLIENT_ID") or None,
             oauth_client_secret=os.environ.get("TTIO_MCP_OAUTH_CLIENT_SECRET") or None,
-            # oauth_required_scopes / oauth_allowed_algs intentionally keep their
-            # dataclass tuple defaults (no env override).
+            # Comma-separated; default gates on "ttio.connector". Set the env var
+            # (e.g. to "") to override — the realm must actually issue these
+            # scopes for the gate to be satisfiable. oauth_allowed_algs keeps its
+            # dataclass default (no env override).
+            oauth_required_scopes=(
+                tuple(
+                    s.strip()
+                    for s in os.environ["TTIO_MCP_OAUTH_REQUIRED_SCOPES"].split(",")
+                    if s.strip()
+                )
+                if "TTIO_MCP_OAUTH_REQUIRED_SCOPES" in os.environ
+                else ("ttio.connector",)
+            ),
         )
