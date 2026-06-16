@@ -113,3 +113,114 @@ def test_registry_evicts_lru_over_cap():
         cm.require_client()
     key["v"] = 2
     assert cm.require_client().session.username == "c2"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: per-session OAuth token-exchange connect
+# ---------------------------------------------------------------------------
+import ttio_mcp.connection as connection  # noqa: E402 – module needed for monkeypatching
+
+
+def test_oauth_session_connect(monkeypatch):
+    """OAuth enabled + valid access token → exchange fires and client is built."""
+    cm = ConnectionManager()
+
+    # OAuth config with the minimal fields _maybe_oauth_connect accesses.
+    class _Cfg:
+        url = "wss://wb/transport"
+        oauth_token_url = "https://kc/token"
+        oauth_client_id = "ttio-mcp"
+        oauth_client_secret = "s3cr3t"
+        oauth_exchange_audience = "tti-workbench"
+
+    cm.enable_oauth(_Cfg())
+
+    # Simulate a validated AccessToken already in the request contextvar.
+    class _AT:
+        token = "user.jwt"
+        subject = "01HACCT"
+        claims = {"preferred_username": "alice"}
+        expires_at = 0
+
+    monkeypatch.setattr(connection, "_current_access_token", lambda: _AT())
+
+    # Stub the async exchange to avoid real HTTP; count invocations.
+    calls = []
+
+    async def _fake_exchange(**kw):
+        calls.append(kw)
+        return ("wb.jwt", 0)
+
+    monkeypatch.setattr(connection, "exchange_for_workbench", _fake_exchange)
+
+    # Capture the BearerAuth passed to ttio.connect.
+    built: dict = {}
+
+    def _fake_connect(url, auth=None):
+        built["url"] = url
+        built["token"] = auth.token
+        built["user"] = auth.username_
+
+        class _C:
+            session = None
+
+        return _C()
+
+    monkeypatch.setattr(connection.ttio, "connect", _fake_connect)
+
+    client = cm.require_client()
+    assert client is not None
+    assert built["token"] == "wb.jwt"
+    assert built["user"] == "alice"
+    assert len(calls) == 1
+    # A second call in the same session reuses the cached client (no re-exchange).
+    assert cm.require_client() is client
+    assert len(calls) == 1
+
+
+def test_oauth_no_access_token_raises(monkeypatch):
+    """OAuth enabled but no access token in context → ToolError (not connected)."""
+    cm = ConnectionManager()
+
+    class _Cfg:
+        url = "wss://wb/transport"
+        oauth_token_url = "https://kc/token"
+        oauth_client_id = "ttio-mcp"
+        oauth_client_secret = "s"
+        oauth_exchange_audience = "tti-workbench"
+
+    cm.enable_oauth(_Cfg())
+    monkeypatch.setattr(connection, "_current_access_token", lambda: None)
+
+    with pytest.raises(ToolError):
+        cm.require_client()
+
+
+def test_oauth_exchange_failure_raises_tool_error(monkeypatch):
+    """A failed token exchange surfaces as a clean ToolError, not a raw traceback."""
+    cm = ConnectionManager()
+
+    class _Cfg:
+        url = "wss://wb/transport"
+        oauth_token_url = "https://kc/token"
+        oauth_client_id = "ttio-mcp"
+        oauth_client_secret = "s3cr3t"
+        oauth_exchange_audience = "tti-workbench"
+
+    cm.enable_oauth(_Cfg())
+
+    class _AT:
+        token = "user.jwt"
+        subject = "01HACCT"
+        claims = {"preferred_username": "alice"}
+        expires_at = 0
+
+    monkeypatch.setattr(connection, "_current_access_token", lambda: _AT())
+
+    async def _boom(**kw):
+        raise RuntimeError("401 Unauthorized")
+
+    monkeypatch.setattr(connection, "exchange_for_workbench", _boom)
+
+    with pytest.raises(ToolError, match="token exchange failed"):
+        cm.require_client()

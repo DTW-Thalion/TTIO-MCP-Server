@@ -30,6 +30,22 @@ class Config:
     http_host: str
     http_port: int
     http_path: str
+    # OAuth / Keycloak resource-server config (all optional; enabled when oauth_issuer is set)
+    oauth_issuer: str | None = None
+    oauth_resource_url: str | None = None
+    oauth_jwks_url: str | None = None
+    oauth_token_url: str | None = None
+    oauth_audience: str = "ttio-mcp"
+    oauth_exchange_audience: str = "tti-workbench"
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_required_scopes: tuple[str, ...] = ("ttio.connector",)
+    oauth_allowed_algs: tuple[str, ...] = ("RS256",)
+
+    @property
+    def oauth_enabled(self) -> bool:
+        """True when OAuth/Keycloak validation is configured (oauth_issuer is set)."""
+        return bool(self.oauth_issuer)
 
     @classmethod
     def from_env(cls) -> Config:
@@ -56,4 +72,14 @@ class Config:
             http_host=http_host,
             http_port=http_port,
             http_path=http_path,
+            oauth_issuer=os.environ.get("TTIO_MCP_OAUTH_ISSUER") or None,
+            oauth_resource_url=os.environ.get("TTIO_MCP_OAUTH_RESOURCE_URL") or None,
+            oauth_jwks_url=os.environ.get("TTIO_MCP_OAUTH_JWKS_URL") or None,
+            oauth_token_url=os.environ.get("TTIO_MCP_OAUTH_TOKEN_URL") or None,
+            oauth_audience=os.environ.get("TTIO_MCP_OAUTH_AUDIENCE", "ttio-mcp"),
+            oauth_exchange_audience=os.environ.get("TTIO_MCP_OAUTH_EXCHANGE_AUDIENCE", "tti-workbench"),
+            oauth_client_id=os.environ.get("TTIO_MCP_OAUTH_CLIENT_ID") or None,
+            oauth_client_secret=os.environ.get("TTIO_MCP_OAUTH_CLIENT_SECRET") or None,
+            # oauth_required_scopes / oauth_allowed_algs intentionally keep their
+            # dataclass tuple defaults (no env override).
         )

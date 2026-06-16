@@ -18,12 +18,60 @@ CONFIG = Config.from_env()
 
 
 def build_app() -> FastMCP:
-    app = FastMCP(
-        "ttio-mcp",
-        host=CONFIG.http_host,
-        port=CONFIG.http_port,
-        streamable_http_path=CONFIG.http_path,
-    )
+    if CONFIG.oauth_enabled:
+        # Fail fast on a half-configured OAuth setup: oauth_enabled is true as
+        # soon as the issuer is set, but the verifier + token exchange (Task 5)
+        # also need these fields. Without this guard a missing field surfaces
+        # only as mysterious runtime 401s.
+        _required = {
+            "TTIO_MCP_OAUTH_JWKS_URL": CONFIG.oauth_jwks_url,
+            "TTIO_MCP_OAUTH_RESOURCE_URL": CONFIG.oauth_resource_url,
+            "TTIO_MCP_OAUTH_TOKEN_URL": CONFIG.oauth_token_url,
+            "TTIO_MCP_OAUTH_CLIENT_ID": CONFIG.oauth_client_id,
+            "TTIO_MCP_OAUTH_CLIENT_SECRET": CONFIG.oauth_client_secret,
+        }
+        _missing = [name for name, val in _required.items() if not val]
+        if _missing:
+            raise ValueError(
+                "OAuth is enabled (TTIO_MCP_OAUTH_ISSUER set) but these required "
+                f"settings are unset: {', '.join(_missing)}."
+            )
+        # Narrow the Optional[str] fields for the type checker (the guard above
+        # already guarantees they are set).
+        assert CONFIG.oauth_issuer and CONFIG.oauth_jwks_url and CONFIG.oauth_resource_url
+
+        from mcp.server.auth.settings import AuthSettings
+
+        from ttio_mcp.oauth import KeycloakTokenVerifier
+
+        verifier = KeycloakTokenVerifier(
+            jwks_url=CONFIG.oauth_jwks_url,
+            issuer=CONFIG.oauth_issuer,
+            audience=CONFIG.oauth_audience,
+            algorithms=list(CONFIG.oauth_allowed_algs),
+            required_scopes=list(CONFIG.oauth_required_scopes),
+        )
+        app = FastMCP(
+            "ttio-mcp",
+            host=CONFIG.http_host,
+            port=CONFIG.http_port,
+            streamable_http_path=CONFIG.http_path,
+            token_verifier=verifier,
+            auth=AuthSettings(
+                # pydantic coerces these str URLs to AnyHttpUrl at validation.
+                issuer_url=CONFIG.oauth_issuer,  # type: ignore[arg-type]
+                resource_server_url=CONFIG.oauth_resource_url,  # type: ignore[arg-type]
+                required_scopes=list(CONFIG.oauth_required_scopes),
+            ),
+        )
+        CONN.enable_oauth(CONFIG)  # stub in ConnectionManager; Task 5 adds the connect logic
+    else:
+        app = FastMCP(
+            "ttio-mcp",
+            host=CONFIG.http_host,
+            port=CONFIG.http_port,
+            streamable_http_path=CONFIG.http_path,
+        )
 
     from starlette.responses import JSONResponse
 

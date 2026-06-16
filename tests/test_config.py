@@ -54,3 +54,48 @@ def test_transport_is_validated(monkeypatch):
     monkeypatch.setenv("TTIO_MCP_TRANSPORT", "carrier-pigeon")
     with pytest.raises(ValueError):
         Config.from_env()
+
+
+def test_oauth_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("TTIO_MCP_OAUTH_ISSUER", raising=False)
+    cfg = Config.from_env()
+    assert cfg.oauth_enabled is False
+    assert cfg.oauth_issuer is None
+
+
+def test_oauth_enabled_from_env(monkeypatch):
+    monkeypatch.setenv("TTIO_MCP_OAUTH_ISSUER", "https://kc.example/realms/ttio")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_RESOURCE_URL", "https://mcp.example/mcp")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_JWKS_URL", "https://kc.example/realms/ttio/protocol/openid-connect/certs")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_TOKEN_URL", "https://kc.example/realms/ttio/protocol/openid-connect/token")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_CLIENT_ID", "ttio-mcp")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_CLIENT_SECRET", "s3cr3t")
+    cfg = Config.from_env()
+    assert cfg.oauth_enabled is True
+    assert cfg.oauth_audience == "ttio-mcp"               # default
+    assert cfg.oauth_exchange_audience == "tti-workbench"  # default
+    assert cfg.oauth_required_scopes == ("ttio.connector",)  # default (tuple)
+    assert cfg.oauth_client_id == "ttio-mcp"
+    assert cfg.oauth_client_secret == "s3cr3t"
+    assert cfg.oauth_issuer == "https://kc.example/realms/ttio"
+    assert cfg.oauth_resource_url == "https://mcp.example/mcp"
+    assert cfg.oauth_jwks_url == "https://kc.example/realms/ttio/protocol/openid-connect/certs"
+    assert cfg.oauth_token_url == "https://kc.example/realms/ttio/protocol/openid-connect/token"
+
+
+def test_oauth_allowed_algs_default(monkeypatch):
+    monkeypatch.delenv("TTIO_MCP_OAUTH_ISSUER", raising=False)
+    cfg = Config.from_env()
+    assert cfg.oauth_allowed_algs == ("RS256",)
+
+
+def test_oauth_issuer_only_is_valid(monkeypatch):
+    # A partial config (issuer set, JWKS/token unset) is valid and must not raise.
+    for k in ("TTIO_MCP_OAUTH_JWKS_URL", "TTIO_MCP_OAUTH_TOKEN_URL",
+              "TTIO_MCP_OAUTH_CLIENT_ID", "TTIO_MCP_OAUTH_CLIENT_SECRET"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("TTIO_MCP_OAUTH_ISSUER", "https://kc.example/realms/ttio")
+    cfg = Config.from_env()
+    assert cfg.oauth_enabled is True
+    assert cfg.oauth_jwks_url is None
+    assert cfg.oauth_allowed_algs == ("RS256",)
