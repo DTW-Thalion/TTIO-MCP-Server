@@ -119,6 +119,27 @@ Check status at any time with `ttio_connection_status` or `ttio_whoami`.
 | `TTIO_MCP_EXPORT_DIR` | `~/.local/state/ttio-mcp/exports` | Directory for `ttio_dataset_export` output. |
 | `TTIO_MCP_CACHE_DIR` | `~/.local/state/ttio-mcp/cache` | Directory for intermediate cache files. |
 | `TTIO_MCP_PAGE_SIZE` | `100` | Default container list page size. |
+| `TTIO_MCP_TRANSPORT` | `stdio` | `stdio` (default) or `http` (streamable-HTTP remote connector). |
+| `TTIO_MCP_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP transport. |
+| `TTIO_MCP_HTTP_PORT` | `8000` | Bind port for HTTP transport. |
+| `TTIO_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path for HTTP transport. |
+
+**OAuth resource-server mode** (HTTP transport only) — set `TTIO_MCP_OAUTH_ISSUER` to enable:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TTIO_MCP_OAUTH_ISSUER` | *(unset)* | Keycloak realm URL. Setting this enables OAuth mode. |
+| `TTIO_MCP_OAUTH_RESOURCE_URL` | *(unset)* | Public URL of this server's `/mcp` endpoint (reported in RFC 9728 metadata). |
+| `TTIO_MCP_OAUTH_JWKS_URL` | *(unset)* | Keycloak JWKS endpoint for token validation. |
+| `TTIO_MCP_OAUTH_TOKEN_URL` | *(unset)* | Keycloak token endpoint for RFC 8693 exchange. |
+| `TTIO_MCP_OAUTH_CLIENT_ID` | *(unset)* | Client ID for `ttio-mcp` in Keycloak. |
+| `TTIO_MCP_OAUTH_CLIENT_SECRET` | *(unset)* | Client secret for the above client. |
+| `TTIO_MCP_OAUTH_AUDIENCE` | `ttio-mcp` | Expected `aud` claim in inbound user tokens. |
+| `TTIO_MCP_OAUTH_EXCHANGE_AUDIENCE` | `tti-workbench` | Target audience for the RFC 8693 exchange (workbench token). |
+
+In OAuth mode the server validates each bearer token (`aud=ttio-mcp`, scope `ttio.connector`),
+serves `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728), and exchanges the user token
+for a `tti-workbench` token to build a per-session workbench client. No `TTIO_WB_TOKEN` needed.
 
 Details: [docs/configuration.md](docs/configuration.md).
 
@@ -127,12 +148,12 @@ Full tool catalog: [docs/tools.md](docs/tools.md).
 ## Development
 
 ```bash
-pytest -q        # 55 passed, 12 skipped expected
+pytest -q        # 88 passed, 17 skipped expected
 ruff check src tests
 ```
 
 CI runs the same commands across Python 3.11 and 3.12 on Ubuntu
-(`.github/workflows/ci.yml`). The 12 skipped tests are the opt-in live
+(`.github/workflows/ci.yml`). The 17 skipped tests are the opt-in live
 integration suite — enable them with `TTIO_MCP_LIVE=1` against a running
 workbench server (see `tests/integration/test_live_smoke.py`).
 
