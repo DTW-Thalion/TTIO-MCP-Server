@@ -99,3 +99,12 @@ def test_oauth_issuer_only_is_valid(monkeypatch):
     assert cfg.oauth_enabled is True
     assert cfg.oauth_jwks_url is None
     assert cfg.oauth_allowed_algs == ("RS256",)
+
+
+def test_oauth_required_scopes_env_override(monkeypatch):
+    monkeypatch.delenv("TTIO_MCP_OAUTH_REQUIRED_SCOPES", raising=False)
+    assert Config.from_env().oauth_required_scopes == ("ttio.connector",)
+    monkeypatch.setenv("TTIO_MCP_OAUTH_REQUIRED_SCOPES", "a, b ,c")
+    assert Config.from_env().oauth_required_scopes == ("a", "b", "c")
+    monkeypatch.setenv("TTIO_MCP_OAUTH_REQUIRED_SCOPES", "")
+    assert Config.from_env().oauth_required_scopes == ()
